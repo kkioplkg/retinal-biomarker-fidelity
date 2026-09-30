@@ -547,7 +547,7 @@ def main(argv=None) -> int:
                     choices=["none", "skan", "pvbm", "both"],
                     help="biomarkers inside the sweep (skan is ~20x faster)")
     ap.add_argument("--sweep_lam", default="0.5,1,2,4")
-    # Coordinator ruling 2026-09-05 23:20: 4 tau values, not 7 -- the grid
+    # Decision 2026-09-05 23:20: 4 tau values, not 7 -- the grid
     # is 16 cells instead of 28 for the prob mode (the only mode that
     # sweeps tau at all).
     ap.add_argument("--sweep_tau", default="0.3,0.5,0.7,0.9")

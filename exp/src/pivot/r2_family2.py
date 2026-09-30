@@ -148,7 +148,7 @@ def discover(root: str, families: Optional[Sequence[str]] = None
             if m:
                 seed = int(m.group(1))
                 continue
-            # <dataset>_seed<k>, <dataset>_s<k> (the layout the GPU agent
+            # <dataset>_seed<k>, <dataset>_s<k> (the layout the GPU job
             # actually used) and <dataset>-seed<k> all mean the same thing
             m = re.fullmatch(r"(.+?)[-_]s(?:eed)?(\d+)", part)
             if m and m.group(1) in DATASETS:

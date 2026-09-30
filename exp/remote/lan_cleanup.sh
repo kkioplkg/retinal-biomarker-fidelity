@@ -20,7 +20,7 @@
 #
 # -- and compares it against the local tree.  Two tiers:
 #
-#   HARD (a mismatch blocks the delete): everything the coordinator named --
+#   HARD (a mismatch blocks the delete): everything named in the plan --
 #       results/*.{csv,json,md}
 #       per_image.csv and summary.json anywhere under runs/rigr, runs/repair
 #       every file inside an edges/ mask/ mask_before/ directory under those two

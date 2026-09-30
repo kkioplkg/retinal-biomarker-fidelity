@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Push the FIVES OOF training prob maps the remote is missing.
-# Coordinator 2026-09-03 18:40: pi must match the local main experiment, which
+# Decision 2026-09-03 18:40: pi must match the local main experiment, which
 # fits it on ALL 510 FIVES OOF training images.  The remote had 178 (the capped
 # 120 plus 58 pushed at 09:00), so build_data was fitting pi on a different set
 # than the local B step -- a silent divergence.

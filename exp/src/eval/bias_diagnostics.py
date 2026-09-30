@@ -1,6 +1,6 @@
 """Bias diagnostics: does macro-MAE reward over-connection?
 
-Hypothesis under test (coordinator, 2026-09-16). Retinal segmentations
+Hypothesis under test (team decision, 2026-09-16). Retinal segmentations
 systematically *under*-estimate length and density, so the signed error
 ``(B_pred - B_GT)/sigma`` is negative before repair. If that is so, then **any**
 method that adds vessel pixels moves those biomarkers toward the ground truth

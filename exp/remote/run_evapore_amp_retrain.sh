@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Supplementary AMP consistency check (coordinator ruling 2026-09-05 20:30).
+# Supplementary AMP consistency check (decision 2026-09-05 20:30).
 #
 # Re-trains EVAPORE with --amp on the CHEAP datasets, one at a time, writing
 # runs/repair/ckpt/evapore_<ds>_amp.pt.  The fp32 checkpoints are untouched and

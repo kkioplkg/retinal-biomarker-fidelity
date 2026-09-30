@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Watch runs/btr/habs_trainonly/ for the C1 agent's regeneration (FIVES train
+# Watch runs/btr/habs_trainonly/ for the C1 run's regeneration (FIVES train
 # events added), re-push it to the remote mirror, and repair any LODO run that
 # was already priced by the OLD heads.
 #
 # Only `G:run:<D>:risk` consumes the BTR heads (`_rigr_cmd` adds --btr_* only
 # for mode == risk), so a `uniform` run is never invalidated.
 #
-# Repair policy (the coordinator's: "a re-run is cheap (run_rigr only) and
+# Repair policy (the agreed one: "a re-run is cheap (run_rigr only) and
 # preferred"): the stale output directory is *moved aside*, never deleted, and
 # the per-dataset G orchestrator is relaunched -- head / data / fit are already
 # DONE on disk so only run_rigr re-executes.
@@ -32,7 +32,7 @@ fingerprint() {
     done ) | sort
 }
 
-# The C1 agent rewrites these files in place.  At 10:33 btr_{miss,false}_all
+# The C1 run rewrites these files in place.  At 10:33 btr_{miss,false}_all
 # were 1019/1020 bytes -- LightGBM heads mid-write, not finished heads.  Pushing
 # one of those would put a stub on the remote and every risk run after it would
 # be priced by garbage.  So: all ten files must exist, each must clear a size

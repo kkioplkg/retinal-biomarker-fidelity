@@ -478,7 +478,7 @@ def headline(au: pd.DataFrame, sens: pd.DataFrame) -> pd.DataFrame:
     The methods consultation (``review/cmig_plan_reply.md`` 2A) is explicit that
     raw units are the main result and that the common scale is a cross-cohort
     sensitivity, never a renamed "natural unit"; this table is laid out that way
-    so the paper agent cannot accidentally invert the emphasis.
+    so the writing pass cannot accidentally invert the emphasis.
     """
     rows: List[dict] = []
     for (ds, col), g in au.groupby(["dataset", "biomarker"]):

@@ -9,7 +9,7 @@
 #   lodo_hrf    R_false: 13 candidates measured   9393 s
 # ~3 h for ~20 candidates.  Nothing downstream of them is worth keeping.
 #
-# GATE (coordinator 2026-09-03 14:05, after the author was interrupted
+# GATE (team decision 2026-09-03 14:05, after the author was interrupted
 # mid-edit).  ALL THREE must hold; a bare content-hash change is NOT enough,
 # because a half-written file still parses and still looks "changed":
 #
@@ -38,7 +38,7 @@ VLOG=remote/bd_versions.log
 STOP=remote/.bd_resync.stop
 PIDF=remote/.bd_resync.pid
 INTERVAL=${BD_INTERVAL:-180}
-MAX_SEC=${BD_MAX_SEC:-300}   # effective seconds per image (coordinator 18:35)
+MAX_SEC=${BD_MAX_SEC:-300}   # effective seconds per image (team decision 18:35)
 once=0; [ "${1:-}" = "--once" ] && once=1
 [ "$once" = 1 ] || echo $$ > "$PIDF"
 rm -f "$STOP"

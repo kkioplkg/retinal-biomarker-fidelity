@@ -42,7 +42,7 @@
 - 2026-09-03 11:00 Tab.2 基线行：保留 "EVAPORE (end-to-end, official code)" 与 "EVAPORE scorer in common harness"（几何候选）两行；`evapore_scorer --candidates rigr` 变体放补充材料。rNCA 行标注为"我们的重实现（共同训练框架）"，并在正文一句话给出在原作者 64×64 数据上的复现性检查（客观收敛、活性掩膜有界、rollout 稳定；默认预算下未超过种子 IoU）。
 - 2026-09-03 14:55 **步骤 B（部署版 R_false 计量）提速，语义如下**：(a) HRF/FIVES 的反事实危害改在 **C1 工作分辨率**（最长边 1536，HRF s=0.4384、FIVES s=0.75）上计量，再按 C1 约定用 `src.c1.stats_c1.native_factor` 把**长度型**标志物（仅 `total_length`）乘 1/s 换回原生单位，然后除以原生训练划分 σ；FD/密度/迂曲度为无量纲，不换算。DRIVE/CHASE（`resize_longest=None`）走的是严格恒等路径，已建好的表不受影响、无需重建。`rfalse_train.csv` 新增 `work_scale` 与 `nativef_<biomarker>` 列以便审计。验证：HRF 单图 work_scale=0.43836、nativef_total_length=2.28125、nativef_FD=1.0，Habs 量级与 DRIVE 同阶（1e-3–3e-2）。(b) build_data 按图并行（默认 6 进程，spawn，单线程、纯 CPU）；每图 RNG 由 (seed, 图序号) 派生，因而与调度顺序无关且可复现（与此前单一序列流不同，已记录）。(c) `--rfalse_max_images` 限制**参与 R_false 计量**的图数（FIVES=40），评分器样本仍取全部 120 图。(d) `--fd_rotations` 默认 8→5（C1 设定）。(e) 链的 stage 2 `--force` 改为一次性：`runs/rigr_data/.stage2_forced_done` 存在则不再强制，重启不会重做 DRIVE/CHASE。
   **关键缺陷修复**：线程限制原本只写在 pool 的 initializer 里，而 spawn 子进程在解释器启动阶段就已导入 numpy/BLAS，故限制无效——实测每个 worker **86 线程**，两个数据集同时构建时约 1000+ 线程挤在 80 核上。改为在**父进程创建 pool 之前**设置 `OMP/MKL/OPENBLAS/NUMEXPR/VECLIB_*_NUM_THREADS=1`，子进程继承后于首次导入即生效；实测降到**每 worker 6–9 线程**。
-  **实测时间**：修复前 HRF ~2600 s/图（13 图≈9.5 h）、FIVES ~650 s/图（120 图≈22 h）。工作分辨率计量后，安静机器单图单进程 HRF = **455 s**（19 个候选，含 21 次双管线标志物调用，约 21 s/次，此前原生分辨率约 186 s/次，≈8.8×）。上线后 6 workers × 2 数据集并发，单图墙钟约 15 min 但吞吐为 6 图并行：HRF 13 图≈50 min、FIVES 40 计量图 + 80 仅样本图≈2 h（原 31.5 h → 约 3 h，≈12×）。**未达到"单图 ≲3 min"**：要达标需把 `max_cand_bio` 24→8~12 或把 `rfalse_bio` 退回 skan，两者都会改变 R_false 训练集，留待协调者决定。
+  **实测时间**：修复前 HRF ~2600 s/图（13 图≈9.5 h）、FIVES ~650 s/图（120 图≈22 h）。工作分辨率计量后，安静机器单图单进程 HRF = **455 s**（19 个候选，含 21 次双管线标志物调用，约 21 s/次，此前原生分辨率约 186 s/次，≈8.8×）。上线后 6 workers × 2 数据集并发，单图墙钟约 15 min 但吞吐为 6 图并行：HRF 13 图≈50 min、FIVES 40 计量图 + 80 仅样本图≈2 h（原 31.5 h → 约 3 h，≈12×）。**未达到"单图 ≲3 min"**：要达标需把 `max_cand_bio` 24→8~12 或把 `rfalse_bio` 退回 skan，两者都会改变 R_false 训练集，留待负责人决定。
 - 2026-09-03 14:50 **(1) verification_failures 恢复**：`--merge-only` 依分片重建摘要，而分片只存**被接受**的事件，故该字段被清空。原 193 图 run 的摘要在远端已于 10:22 被 FIVES-train run 覆盖、`logs/c1_full.log` 不存在、`results/_fives_test_only/` 也只备份了 `c1_stats_summary.json` —— 但 `results/c1_images.csv` 的逐图 `fails` 字典完好（merge-only 在无新 meta 时回退读取旧表，见 run_c1:880），与 FIVES-train run 自身摘要（`results_remote/results/c1_summary.json`，60 图）两者图集不相交，直接相加即得全语料 253 图 tally，已写回 `results/c1_summary.json`（附 `verification_failures_source`、`verification_by_type`、`verification_reason_fractions`）。
   **丢弃率（占尝试数）**：sever 8112/23950 = **33.9%**（全部为 `no_disconnection`，即切口未真正断开，门禁按设计拒绝）；caliber 732/3740 = **19.6%**（`invariants_changed`，拓扑中性臂被正确否决）；truncate 710/10215 = **7.0%**（cut_too_short 4.2% / branch_too_short 2.5% / beta0_changed 0.3%）；bridge **0%**（`bridge_candidates` 只产出可行对）。总计 9554/41529 = **23.0%**。尝试数与预算自洽（caliber 精确吻合 60×20+28×20+45×12+120×12=3740；sever/truncate 因个别图 loci/终末支不足预算低 0.1%）。
   **附带发现（需留意）**：`results/c1_images.csv` 仍是 193 行 —— merge-only 未为新增 60 张 FIVES 训练图生成 meta，故 **B0 缓存缺 FIVES 训练图**。本次 σ 未受影响（FIVES 用原生实测表），但若后续有人依赖 B0 回退路径需先补跑 meta。
@@ -54,18 +54,18 @@
 - 2026-09-05 11:30 **步骤 H（Exp2）BTR 接线缺陷修复**：`plan_H` 未传 `--btr_runs_dir/--btr_variant`，故 `exp2_candidates` 的 `R_miss` 由默认扁平布局 `runs/btr/btr_miss_all.joblib`（H_dep 目标、且在 **test 图事件**上拟合，属泄漏）解析，而 `R_false` 用的是部署版 `btr_false_deployed.joblib`（habs）。`BTRBackend` 正确拒绝混用（`ValueError: miss/false heads were trained on different targets ['habs','hdep']`），远端首次 H 运行 118/118 图全部报错、未写出 `results/tab1_exp2.csv`。**修复**：`plan_H` 现与 D/F 一致传 `--btr_runs_dir runs/btr/habs_trainonly --btr_variant all`（备份 `src/pipeline/s4_all.py.bak_planH_*`）。同时把本地 2026-09-03 10:36–10:37 重拟合的 `runs/btr/habs_trainonly/`（10 个头）推到远端镜像后重跑 H —— 远端此前仍是 08:23–08:24 基线（`btr_resync.sh` 的静默门一直判定"正在变化"而未推送）。结论：任何在此之前用远端 `habs_trainonly` 头定价的运行都需按镜像 mtime 复核；G 区块的 `wo_<D>` 头同批更新。
 - 2026-09-05 10:34 **phase-2 链断裂后手工接续**：`run_s4_phase2.ps1` 的 stage 2（B,C 重拟合）于 09-04 01:37 正常结束（642.1 min），但链进程随后消失，既未写 `runs/rigr_models/.phase2_refit_done` 也未启动 stage 3。已核验 4 数据集 × 3 种子共 12 组 `scorer.joblib` + `btr_false_deployed.joblib` 齐全（`s4_all` 预检确认 12 对 R_false 目标均为 `habs`），补写标记并手工启动 stage 3（`--only D,F,I --skip-steps "G:*,H:*" --jobs 8`，70 步，日志 `runs/s4_stage3.log`）。
 
-- 2026-09-05 20:30 **EVAPORE-HRF 只能用混合精度训练（协调者裁定，记录于此并写入 paper/tables/baseline_protocol.tex 脚注）**：`EvaporePipeline.features()` 把 U-Net 施加在**全分辨率图像**上；HRF 原生 3504×2336（8.19 MP，为 FIVES 2048² 的约 2 倍）在 16 GB T4 上放不下 —— 在**独占整张卡**的情况下仍 OOM：解码器 skip 拼接需再要 1.95 GiB，而模型+激活已占 14.28 GiB，缺口约 700 MB（19:49 复核 `Process 760639 has 14.28 GiB`，即它自己）。此前 09-03 10:26 / 12:36、09-04 04:24 三次 OOM 均被记为"同卡共用"，实为设计本身在 HRF 上就已越界，共用只是压垮它的最后一根稻草。
+- 2026-09-05 20:30 **EVAPORE-HRF 只能用混合精度训练（决定，记录于此并写入 paper/tables/baseline_protocol.tex 脚注）**：`EvaporePipeline.features()` 把 U-Net 施加在**全分辨率图像**上；HRF 原生 3504×2336（8.19 MP，为 FIVES 2048² 的约 2 倍）在 16 GB T4 上放不下 —— 在**独占整张卡**的情况下仍 OOM：解码器 skip 拼接需再要 1.95 GiB，而模型+激活已占 14.28 GiB，缺口约 700 MB（19:49 复核 `Process 760639 has 14.28 GiB`，即它自己）。此前 09-03 10:26 / 12:36、09-04 04:24 三次 OOM 均被记为"同卡共用"，实为设计本身在 HRF 上就已越界，共用只是压垮它的最后一根稻草。
   **处置**：`evapore_adapter.py` 新增 `--amp`（fp16 autocast + GradScaler，主权重与优化器状态保持 fp32），**默认关闭**，故 `evapore_{drive,chasedb1,fives}.pt` 三个既有权重逐位不变、可复现；仅 HRF 用 `--amp` 训练，checkpoint 元数据与 `runs/s4_logs/remote_Etrain/Etrain_evapore_hrf.log` 保留证据。备份 `src/baselines/evapore/evapore_adapter.py.bak_amp_*`。若 fp16 仍不够，退路依次为 `--amp` + 梯度检查点、最后才是 HRF 单独用 0.75 尺度特征图（后者须在表中标注）。
   **补充一致性检查**：仅因远端在关机前本会空转，追加 `--amp` 重训 drive/chasedb1 → `runs/repair/ckpt/evapore_{drive,chasedb1}_amp.pt`（约 2.5–3.5 h）。**FIVES 明确排除**：其 fp32 训练单是 55 epoch 就跑了 101155 s（28.1 h），远超本次 ~10 h 预算。Tab.2 的 EVAPORE 行对这三个数据集**仍取 fp32 权重**，AMP 版只进补充材料用于说明"混合精度对结果影响可忽略"。
 - 2026-09-05 20:30 **finisher 增加失效探测**：`remote/etrain_status.sh` 只读日志（不查进程表、不按模式匹配任何进程），返回 DONE / FAILED:<rc> / STALL:<min> / RUNNING；`remote/finish_remote.sh` 的 D/D2 阶段任一非零 rc 或日志静默 ≥90 min 即写 `remote/.finish_remote.ALERT` 并停止轮询（绝不关机）。起因：17:23 的 OOM 让只轮询产物文件的看门狗对着一个已死的任务空等 2.4 h。
 
-- 2026-09-05 23:10 **步骤 D 的 `--sweep` 限定为 seed 0（协调者裁定）**：`s4_all` 新增配置键 `sweep_seeds`（默认 `None` = 全部种子，保持原行为），`configs/s4_phase2.json` 设为 `[0]`。Fig.3 的 (λ,τ) 曲线与匹配版 FCR 统计只由 seed 0 产生；seed 1/2 在默认工作点 λ=1、τ=0.5 上运行，而 Tab.2 主表数字本来就取该工作点，故三种子的主结果不受影响。**实现要点**：不扫描的步骤不再把 `sweep_curve.csv` / `sweep_per_image.csv` 列入 `outputs`，否则该步永远无法判定 DONE 而被反复重跑。备份 `src/pipeline/s4_all.py.bak_sweepseeds_*`。
+- 2026-09-05 23:10 **步骤 D 的 `--sweep` 限定为 seed 0（决定）**：`s4_all` 新增配置键 `sweep_seeds`（默认 `None` = 全部种子，保持原行为），`configs/s4_phase2.json` 设为 `[0]`。Fig.3 的 (λ,τ) 曲线与匹配版 FCR 统计只由 seed 0 产生；seed 1/2 在默认工作点 λ=1、τ=0.5 上运行，而 Tab.2 主表数字本来就取该工作点，故三种子的主结果不受影响。**实现要点**：不扫描的步骤不再把 `sweep_curve.csv` / `sweep_per_image.csv` 列入 `outputs`，否则该步永远无法判定 DONE 而被反复重跑。备份 `src/pipeline/s4_all.py.bak_sweepseeds_*`。
   **实测依据**（10 min 双采样，8 个 D 步并发）：整体吞吐仅约 2 图/10 min；`D:prob:hrf:*` 每图约 2 h（3504×2336 上 4 λ × 7 τ = 28 个扫描格，每格一次 skan 标志物调用），30 图/种子 ≈ 60 h/种子。`prob` 是唯一扫描 τ 的模式，故其扫描格数是 `uniform`/`risk` 的 7 倍；CHASE 上实测 prob 422 s/图 vs uniform 177 s/图。
 - 2026-09-05 23:01 **步骤 D 的三个 seed-0 任务下放到远端**（远端 32 核在 evapore_hrf 的 CPU 取样阶段结束后闲置）：`D:uniform:fives:s0`、`D:risk:hrf:s0`、`D:risk:fives:s0`，配置 `configs/s4_remote_D.json`（cpu_jobs=3，OMP=4，共 12 核），CPU lane 因此 `CUDA_VISIBLE_DEVICES=""`，不会碰 GPU 0（属 evapore_hrf）。另外三个 seed-0 hrf/fives 步骤（`D:prob:hrf:s0`、`D:prob:fives:s0`、`D:uniform:hrf:s0`）**已在本地运行中，故在远端 `--skip-steps` 掉** —— 同一步骤绝不在两处同时运行。本地重启的编排器同样跳过这三个远端步骤。
   **输入 mtime 核对（远端与本地逐一致）**：`btr_miss_all.joblib` 10:36、`rigr_head/{hrf,fives}/seed0/best.pt` 09:00/09:47、`rigr_models/{hrf,fives}/seed0/scorer.joblib` 18:35/19:48；seed-0 测试预测 hrf 30、fives 60；σ 表五数据集齐全。
 - 2026-09-05 23:08 **发现并终止一处重复写入**：`I:res:hrf:none` 曾在两个编排器中同时运行 —— stage-3 于 10:34 启动时本地尚无 `results/fig4b_resolution_hrf_*`（这些文件 10:46 才从远端拉回），而 `s4_I_gpu1` 的同名步骤于 20:24 完成并写出结果。stage-3 那一份（PID 43492，gpu0 lane）会在完成时覆盖已完成的结果，已按显式 PID 终止；保留 20:24 那份（DONE 61711.8 s，自洽完整）。教训：**拉回远端产物会改变本地步骤的"已完成"判定，因此任何拉取都应在编排器启动之前完成，或对受影响的步骤显式 `--skip-steps`。**
 
-- 2026-09-05 23:20 **Fig.3 扫描网格与扫描分辨率的三项修正（协调者裁定）**：
+- 2026-09-05 23:20 **Fig.3 扫描网格与扫描分辨率的三项修正（决定）**：
   (1) **停掉六个 28 格全扫描的 `D:prob` 运行**（hrf/fives × seed 0,1,2；均按显式 PID 终止，终止前逐一复核命令行），另加 `D:uniform:hrf:s0` —— 它同为 seed-0 的 HRF 扫描，若保留原生分辨率会与其余 seed-0 HRF 扫描混用两套口径。部分输出全部移到 `*_partial_sweepfix0905_2323/`，未删除。实测被停掉的运行：`D:prob:hrf:s0` 12.7 h 只完成 6/30 图（约 2 h/图），`D:prob:fives:s0` 11.7 h 完成 22/60（约 32 min/图）。
   (2) **`sweep_tau` 由 7 值改为 4 值 `{0.3,0.5,0.7,0.9}`**（λ 仍 `{0.5,1,2,4}`），故 `prob` 的网格由 28 格降为 16 格；`uniform`/`risk` 本就只用 `taus[:1]`（接受判据是 U>0 的硬阈值，λ 才是旋钮），不受影响。**DRIVE/CHASE 的既有 seed-0 扫描曲线不重跑**：新网格的四个 τ 是旧网格七个 τ 的**子集**，Fig.3 直接取子集即可得到跨数据集一致的网格；论文按此说明。
   (3) **HRF/FIVES 的扫描格标志物改在工作分辨率（最长边 1536）计量**，并按 C1 与 `build_data` 相同的约定用 `native_factor` 把**长度型**标志物折算回原生单位（`total_length ×1/s`；FD/密度/迂曲度无量纲不换算）。实现为 `run_rigr --sweep_scale {native,work}`，编排器仅对 `sweep_scale_work_datasets=["hrf","fives"]` 发出 `work`。**主工作点（λ=1、τ=0.5，即 `per_image.csv` 的全部数字）始终在原生分辨率计量，未变。** 为使 `macro_mae_benefit` 不含分辨率偏移，扫描的 BEFORE 基线也在同一工作分辨率重测（`sweep_before_bio`），`sweep_per_image.csv` 新增 `sweep_scale` 列记录实际比例。
@@ -93,7 +93,7 @@
   **(6) η 敏感性（补充材料）**：`run_eta_sensitivity.sh`，risk 模式 η∈{0.01,0.1,1} × {DRIVE, CHASE_DB1} seed 0、不扫描 → `runs/rigr/eta_sens/<eta>/<ds>/seed0`；η=0.1 为预注册值，同时充当与主 risk 运行的一致性校验。
   备份：`src/rigr/{utility,run_rigr,repair_hook}.py.bak_etascale_*`。
 
-- 2026-09-06 13:00 **两处收尾加固（协调者要求）**：
+- 2026-09-06 13:00 **两处收尾加固（项目要求）**：
   (1) **`D:uniform:fives:s0` 本地兜底**：它是远端关机时唯一还"活着"的待恢复产物（同批的两个 risk 目录已是 C_geom 修正前的产物，本地正在重跑，`pull_lost_D.sh` 会把它们落成 `*_etascale_pre0906`）。`remote/fallback_uniform_fives_s0.sh`（detached，PID 46016）在**本地编排器只剩这一步待跑**（`--status` 的 pending ≤ 1）**或 09-06 22:00 到点**（先到者为准）时本地跑掉它；若已在磁盘上则立即空退。**重启看门狗 `await_restart_pull_shutdown.sh`（PID 47460/39296）继续保留**：实例若稍后回来，它仍会拉取、做 fail-closed 反查、再关机。
   (2) **E→J 链的门禁改为按磁盘判定**：原门禁是"没有 s4_all 进程存活"，而**进程消失不等于完成** —— 09-06 12:19 stage-3 编排器带着在飞的 F 步骤一起死掉，旧看门狗因此认为可以推进，几乎在被隔离的 risk 产物和只跑了一半的 Tab.3 上执行 J。现改为轮询 `--only D,F,I --status`，要求 `pending==0 且 skipped==0` 才继续（其后仍保留"无其它编排器存活"的次级保护，避免抢 CPU 池）。该判据自动覆盖 C_geom 重跑与 `D:uniform:fives:s0`，无需任何人维护清单 —— 与 §5c 记录的教训同一类修复。已实测：正则可正确解析页脚 `70 steps  (33 done, 37 pending, 0 skipped)`，看门狗（PID 8864）已在按此轮询。
 
@@ -116,14 +116,14 @@
 - 2026-09-16 05:00 (1) Exp2 子采样种子改为 blake2b 稳定摘要（两次独立运行候选键与数值完全一致）；v4 表为最终版：域内秩相关 ρ(U,ΔH)=−0.0387（p=0.012），四个数据集均 ≤0；跨数据集混合的原始 ρ 为 Simpson 伪影，论文引用域内值。(2) lodo_btr_deployed_false=True 固化；部署版 R_false 在四个留出域上均提高 TRR、FCR 基本不变；LODO seed 1/2（模型固定 seed 0）8/8 组 risk TRR > uniform。(3) EVAPORE-HRF 阈值扫描实测 46.7 h（前 10 图 ×4 τ）超预算，不做；HRF 仅报 τ=0.5 点并说明。EVAPORE 端到端的 FCR 对 τ 几乎不变（0.60–0.76）而 TRR 随 τ 下降，无法通过阈值进入 RiGR 的 FCR 区间——这本身是结果。(4) 延迟（LAN 节点，20 核 + 3080 10 GB）：DRIVE 端到端 2.80 s、HRF 41.3 s（不含生物标志物）；BTR 效用计算占 70–74%，A* <0.9 ms/候选。(5) 隐患：--gpu -1 仅在 CUDA_VISIBLE_DEVICES 为空时可用（run_rigr.py:92, head.py:383），待修。
 - 2026-09-16 12:30 sweep2 完成，事后匹配 FCR 结论：在三个有共同可达带的数据集（DRIVE [0.505,0.630]、HRF [0.669,0.683]、FIVES [0.610,0.703]）上，probability-only 在几乎所有匹配工作点上 TRR 点估计最高、CI 最窄、生物标志物收益 CI 在 DRIVE/HRF 均不跨零；risk 的 CI 宽 3–10 倍，FIVES 上 3/4 点收益为负。CHASE 无共同带（n=8，两臂占据不相交的 FCR 区间）。判定：预设结论 2 在可达范围内的事后检验为负——风险引导效用未在匹配精度下超过仅按概率阈值的选择。论文据此陈述："最简单的 RiGR 臂最好；BTR 作为危害预测子有效，但把它放进决策效用没有带来收益"。
 
-- 2026-09-16 13:50 **LODO 补跑 probability-only 臂（协调者指示）**：跨域块此前只有 `risk` 与 `uniform`，缺 `prob`。补跑的理由是域内事后匹配-FCR 比较（`results/fig3_matched_fcr_posthoc.csv`）显示**prob 在同等精度下不劣于且多数点优于 risk**，因此"风险制导效用是否比朴素 p_e 更能跨域迁移"这一问题在 LODO 上尚未被检验——只比 risk 与 uniform 无法回答它。
+- 2026-09-16 13:50 **LODO 补跑 probability-only 臂（统一安排）**：跨域块此前只有 `risk` 与 `uniform`，缺 `prob`。补跑的理由是域内事后匹配-FCR 比较（`results/fig3_matched_fcr_posthoc.csv`）显示**prob 在同等精度下不劣于且多数点优于 risk**，因此"风险制导效用是否比朴素 p_e 更能跨域迁移"这一问题在 LODO 上尚未被检验——只比 risk 与 uniform 无法回答它。
   **命令**：`run_rigr --mode prob --dataset <D> --seed 0 --pred_dir runs/seg/<D>/seed0/pred --out runs/rigr/lodo_<D>/prob --head_ckpt runs/rigr_head/lodo_<D>/seed0/best.pt --scorer runs/rigr_models/lodo_<D>/seed0/scorer.joblib --evidence auto --orientation learned --lam 1.0 --eta 0.1 --tau 0.5 --bio both --gpu 0`（FIVES 加 `--limit 60`），即与 `G:run:<D>:uniform` **逐字对齐**，仅 `--mode` 不同；四折并行于本地 CPU 池，日志 `runs/s4_logs/G_run_<D>_prob.log`，驱动 `run_lodo_prob.sh` / `runs/lodo_prob_driver.log`。
   **为何不传 BTR 与 geom_scale**：prob 模式下 `U = p − τ`，λ/η 与 R_miss/R_false 全部不参与（`utility.compute_utility`），故 `--btr_*` 与 m_R 无意义；这也意味着 prob 臂**不受 2026-09-06 12:40 C_geom 尺度缺陷影响**，无需隔离重跑。
   **纳入方式**：`tables.build_tab2` 的 LODO 主块按 `lodo_*/{risk,uniform}` 取臂，新增 `prob` 目录会**自动**进入同一块（无需改代码），`_aggregate_mean_sd` 以 `mode` 分组。
   **预期用途**：若 prob 在四折上的 TRR_recall 不低于 risk，则与域内结论一致，应在正文中明确写出"风险制导效用在域内与跨域均未优于 probability-only"；反之则是 risk 唯一站得住的优势，须单独报告。
 - 2026-09-16 15:00 稿件评审第 3 轮（7/10）触发：(1) FCR 空集约定统一为"|A|=0 时 FCR 未定义、不计入均值"（报告 n_defined），替代此前 FCR=0 标记；tables/figures/matched_fcr 一致修改并重生成。(2) Tab.2 的 no_repair 行必须与修复行使用同一图像集与同一预测（FIVES 修复行用 60 图子集，而 no_repair 若取自 seg_per_image 的 200 图则不可比）：改为由各修复运行的 before_* 列（同一图像、同一预测）派生 no_repair 行；审计 clDice 0.9066→0.8694 的差异来源。(3) 事件计数措辞：31,975 个验证通过的干预，其中 25,649 获得有效匹配对照并进入 H_net 分析。(4) 证据地位措辞：最终 RiGR 使用事后（prospectively frozen）的 H_abs 与 m_R，不将整个最终实现称为预设。(5) "risk 从不优于 prob" 软化为与 bootstrap CI 一致的表述。
 - 2026-09-16 15:30 **no_repair 基线修正（全部四个数据集）**：tables.py 的 no_repair macro-MAE 曾按 (dataset,image) 无 seed 合并并任取首个匹配运行（实为 ablation_* 目录），导致基线错误：DRIVE 1.0557→1.0653、CHASE 1.2679→1.1876、HRF 1.8076→1.8735、FIVES 0.6685→0.6468。后果："HRF 上所有 RiGR 臂劣于不修复"是伪结论——按正确基线，RiGR（及 geometric/evapore_scorer）在四个数据集上均小幅降低 macro-MAE（HRF −0.029/−0.023），仅 rnca 恶化；RiGR 仍全面逊于 evapore_e2e。新增 src/eval/check_results.py（6 类一致性检查）纳入 make_all。
-  **补充（2026-09-16 16:20）**：应协调者要求，prob 臂再补 seed 1、2（四折共 8 个运行，`runs/rigr/lodo_<D>/prob_seed{1,2}`，脚本 `run_lodo_prob_seeds.sh`）。协议与既有 `risk_seed*`/`uniform_seed*` 一致（见 2026-09-15 21:30(3)，并已对照 `lodo_drive/risk_seed1/summary.json` 核验）：**头、评分器、模型一律沿用该折的 seed-0 训练，只更换测试预测的种子**——因此这些额外种子是"测试集重采样"，不是重新训练，不引入新的训练随机性。
+  **补充（2026-09-16 16:20）**：应项目要求，prob 臂再补 seed 1、2（四折共 8 个运行，`runs/rigr/lodo_<D>/prob_seed{1,2}`，脚本 `run_lodo_prob_seeds.sh`）。协议与既有 `risk_seed*`/`uniform_seed*` 一致（见 2026-09-15 21:30(3)，并已对照 `lodo_drive/risk_seed1/summary.json` 核验）：**头、评分器、模型一律沿用该折的 seed-0 训练，只更换测试预测的种子**——因此这些额外种子是"测试集重采样"，不是重新训练，不引入新的训练随机性。
   **动机**：seed-0 三臂结果显示 prob 在 4 折中的 3 折 TRR_recall 高于 risk（CHASE 0.2102 vs 0.2031、FIVES 0.2162 vs 0.1923、HRF 0.2029 vs 0.1592），仅 DRIVE 相反（0.2589 vs 0.3063）；但 CHASE 仅 8 张测试图，单种子下 ~0.05 的差异无法与噪声区分，故跨域结论必须多种子才能成立。
 - 2026-09-17 00:30 **转向方案预注册（外部第 2 轮评审后）**：(1) 术语：image-level measurement fidelity（Pearson/Spearman r 与去偏残差 SD）而非 reliability；"三轴测量审计"而非可加分解（e_i=μ_ds+ε_i，拓扑项为配对反事实）。(2) CF-Loss 基线必须为公开代码（github.com/rmaphoh/feature-loss）的忠实实现（软盒计数、按图像尺寸缩放的二进阶梯、密度项）；此前"固定 2..64 阶梯"版本作废。(3) HRF 因探针 P1–P5 已成为开发集：HRF 仅报告为开发/机制集；确证集 = FIVES（200 测试图，未用于任何探针的微调选择）+ 外部无掩膜集（APTOS/ODIR，冻结分割器后再触碰标签）+ 未触及的 CHASE/STARE 跨集评估。(4) 检查点规则预先固定：固定 50 epoch 取 last.pt（同时报告按验证集测量保真度选择的检查点）；不以测试指标选择。(5) 主终点预注册：FIVES 上 density/length/FD 的 r（配对 bootstrap Δr）与下游 macro-AUC（配对 ΔAUC，含质量/相机协变量调整模型）；迂曲度与密度副作用作为必报的安全终点。(6) 贡献收敛为两项：C1 GT 锚定的测量保真度审计 + 神谕臂效用衰减；C2 安全约束的测量感知微调（ReliSeg）；C3 视图离散度标志降为次要；拓扑修复为阴性对照。
 - 2026-09-17 01:00 **外部验证集角色**：Kaggle 无凭据；来源为公开镜像（HF），逐文件字节校验。主外部集 = APTOS-2019（3,662 张，DR 分级，QWK + macro-AUC）、IDRiD（516 张，4288×2848，DR/DME 分级）、Messidor-2（1,748 张，DR 分级）；ODIR-5K 仅有 512 px 预处理镜像（无原始分辨率、逐眼单标签）→ 降为低分辨率敏感性集；DR-HAGIS 官方链接已 404 且无存档 → 放弃并记录。分割器冻结后才触碰外部标签；患者级嵌套 CV；配对 bootstrap ΔAUC；质量协变量（Laplacian 方差/亮度）调整模型。
@@ -147,16 +147,16 @@
 - 2026-09-17 11:30 **E2 补充臂入队（paper2 评审，13:30 条的执行记录）**：(1) 新增同预算对照 `continued`——同一起始检查点、同样 50 epoch、同样 LR 调度与 batch，只用基础损失（CE-Dice + 0.5·clDice），实现为 `lam=0.0`（测量项照常前向计算并记录，梯度贡献恒为 0，数据管线与其它臂逐位一致），FIVES+HRF × seed 0-2 共 6 个训练；Δr 今后**同时**对 `baseline` 与 `continued` 报告。(2) HRF seed0 新增单项消融 `abl_density_only` / `abl_length_only` / `abl_fd_only`（保留 clDice，lam=0.25，自适应阶梯）——原有的 `abl_no_*` 只能说明哪一项可去掉，说明不了哪一项在起作用。(3) 这 9 个训练作业在 `build_jobs()` 中位于 E3 之前（worker 顺序遍历），另起两个 worker（pid 44224/44688，日志 gpu{0,1}_train2_20260917_113033.log）立即领取；先前启动的两个 E3 worker 保留其 IDRiD 作业继续跑——E3 阶段的 GPU 利用率实测仅 0-6%（瓶颈在 CPU 端的生物标志物计算），与训练并行不构成显存或算力冲突。单个 50-epoch 微调实测 18-25 min，9 个作业两通道约 100 min。
 - 2026-09-17 11:35 **E3 分类阶段预注册冻结（写入 `src/pivot/e3_external.py` 常量，先于任何外部标签被模型读取）**：主队列 = APTOS-2019（3,662 图）；主终点 = referable DR（grade ≥ 2，`src/data/external.py::REFERABLE_THRESHOLD`）的 AUROC；主模型 = 4 个 skan 生物标志物 + 采集/质量协变量（featureset `bio+cov`）上的 logistic 回归；主对比 = ΔAUC(ReliSeg − baseline)，FIVES seed 0-2 逐种子并报种子均值；不确定度 = **逐图**配对 bootstrap（N_BOOT=1000）。次要：GBDT、0-4 分级的 QWK、仅 `bio` 特征集。复制队列：IDRiD(516)、Messidor-2(1,744)。敏感性：ODIR-512（不承载正向主张）。**划分/重采样单位**：APTOS / Messidor-2 / IDRiD 镜像均无可用患者标识（Messidor-2 原始文件名丢失，874 次双眼检查无法复原；APTOS 无患者 ID；IDRiD 一图一受试者），故这三个集合的划分、分组与 bootstrap **一律为逐图**，论文不对其作患者级泛化主张；ODIR-5K 有真实患者 ID（3,358 患者 / 6,392 眼），保持受试者级分组。代码落点：`COHORT_ROLE` / `PRIMARY_COHORT` / `PRIMARY_TARGET` / `PRIMARY_CLF` / `PRIMARY_FEATURESET` / `grouping_for()`，输出表新增 `cohort_role` / `split_unit` / `is_primary` 列。**时间线如实记录**：IDRiD 的 bio（推理）阶段已于 11:15 开始，早于本条冻结 20 分钟；但 bio 阶段只写入标签列、不拟合任何模型，冻结时没有任何外部标签被模型看过，分类阶段一行未跑。同时把 `DEFAULT_RESIZE_LONGEST` 从 1024 改为 1536，与 02:00 条一致（此前 e2 队列已显式传 `--resize-longest 1536`，改的是可能被误用的默认值）。
 - 2026-09-17 11:40 **E2 分析协议固定（`src/pivot/e2_analysis.py`）**：主面板 = **skan** 管线的 density / total_length / FD / tortuosity，PVBM 作为敏感性分析单列一节；主检查点 = last.pt，`fid` 并列报告并始终标注；Δr 为逐图配对 bootstrap（2000 次重采样，95% 百分位 CI），对 `baseline` 与 `continued` 两个参照各报一次；逐种子 Δr 与符号一致性（`n_seeds_positive` / `direction_consistent`）和种子均值（同时给出"种子均值的配对 bootstrap CI"与"3 个种子点估计的 t 区间"）并列。**安全边界数值化**：Dice/clDice 下降 ≤ 0.01（绝对）；tortuosity 与 density 的 Δr ≥ −0.05；|Δbias| ≤ 0.25σ。点估计越界记 `BREACH`，点估计合格但 95% CI 越界记 `AT-RISK`，逐行写入 `results/pivot/e2_safety.csv`。
-- 2026-09-17 11:55 **E3 检查点范围追加 `continued`（追加，非替换，待协调者复核）**：02:00 条冻结的 11 个检查点原样保留且排序在前；在每个外部集内**追加**FIVES seed 0-2 的 `continued`（同预算对照）共 3 个，E3 作业总数 44 → 56。理由：13:30 的评审意见把"更多训练"确立为域内 Δr 的必需对照，外部 ΔAUC 面临同一个混淆；若不测，`ΔAUC(ReliSeg − baseline)` 无法区分"测量项有用"与"多训练 50 epoch 有用"。排序保证预注册的主对比（ReliSeg − baseline）在每个队列上先完成，追加臂只在其后运行，且这些作业依赖 `runs/pivot/fives/seed<k>/continued/last.pt`，在该训练完成前处于 WAIT。**这是对预注册范围的增补而非改动，删除它不影响任何既有终点**；若协调者认为不应扩大冻结范围，回退只需删掉 `e3_checkpoints()` 末尾的三行（届时尚无一行结果产生）。
+- 2026-09-17 11:55 **E3 检查点范围追加 `continued`（追加，非替换，待负责人复核）**：02:00 条冻结的 11 个检查点原样保留且排序在前；在每个外部集内**追加**FIVES seed 0-2 的 `continued`（同预算对照）共 3 个，E3 作业总数 44 → 56。理由：13:30 的评审意见把"更多训练"确立为域内 Δr 的必需对照，外部 ΔAUC 面临同一个混淆；若不测，`ΔAUC(ReliSeg − baseline)` 无法区分"测量项有用"与"多训练 50 epoch 有用"。排序保证预注册的主对比（ReliSeg − baseline）在每个队列上先完成，追加臂只在其后运行，且这些作业依赖 `runs/pivot/fives/seed<k>/continued/last.pt`，在该训练完成前处于 WAIT。**这是对预注册范围的增补而非改动，删除它不影响任何既有终点**；若负责人认为不应扩大冻结范围，回退只需删掉 `e3_checkpoints()` 末尾的三行（届时尚无一行结果产生）。
 - 2026-09-17 11:55 **LAN 节点重新启用**：工作树 /mnt/data/Programming/research_ws/medical1（/dev/sda1，NTFS，1.4 TB 空闲），与本地同结构；用后不删。分工：LAN 3080 运行 E3 外部推理（FIVES 训练检查点 × {baseline, reliseg, cfloss} × {IDRiD, Messidor-2, APTOS}，ODIR 敏感性最后）；本地双 3080 运行 E2 新增训练臂（continued、单项消融）、零样本与域内推理。
-- 2026-09-17 12:05 **E3 分工改为本地 + LAN 双节点（协调者指示），本地队列重新划界**：LAN 节点（LAN_HOST，单张 3080，由另一个 agent 配置）承担**全部 FIVES 训练检查点 × {IDRiD, Messidor-2, APTOS-2019}**（baseline `best.pt` / reliseg `last.pt` / cfloss `last.pt` × seed 0-2，共 27 趟），结果 rsync 回 `exp/results/pivot/e3/<ext>/<tag>/`。本地 GPU 只做：(1) `continued` 新臂（FIVES+HRF × 3 seed）与 3 个 HRF 单项消融的训练；(2) 它们的域内推理（last + fid）与 CHASE/STARE 零样本推理；(3) **全部完成之后**才是 HRF seed0 × {baseline, reliseg} 在三个主队列上的 E3 推理，以及 ODIR-512 敏感性集的全部检查点。代码落点：`e2_run.py` 新增 `E3_REMOTE_COHORTS` / `e3_is_remote()` / `e3_local_units()`，`e3_jobs()` 只生成本地的 17 个作业（作业总数 355 → 316）。
+- 2026-09-17 12:05 **E3 分工改为本地 + LAN 双节点（统一安排），本地队列重新划界**：LAN 节点（LAN_HOST，单张 3080，由另一路 配置）承担**全部 FIVES 训练检查点 × {IDRiD, Messidor-2, APTOS-2019}**（baseline `best.pt` / reliseg `last.pt` / cfloss `last.pt` × seed 0-2，共 27 趟），结果 rsync 回 `exp/results/pivot/e3/<ext>/<tag>/`。本地 GPU 只做：(1) `continued` 新臂（FIVES+HRF × 3 seed）与 3 个 HRF 单项消融的训练；(2) 它们的域内推理（last + fid）与 CHASE/STARE 零样本推理；(3) **全部完成之后**才是 HRF seed0 × {baseline, reliseg} 在三个主队列上的 E3 推理，以及 ODIR-512 敏感性集的全部检查点。代码落点：`e2_run.py` 新增 `E3_REMOTE_COHORTS` / `e3_is_remote()` / `e3_local_units()`，`e3_jobs()` 只生成本地的 17 个作业（作业总数 355 → 316）。
   **执行细节（避免两节点写同一个可续跑文件）**：本地此前已在跑的两趟 `e3:idrid:fives:s0:{baseline,reliseg}`（各约 160/516 图，无 meta.json）已按 PID 停止（子进程 25996/6936 及其 worker 44920/37692，均经 Win32_Process 逐一核验命令行后停止），并**删除其半成品目录**，让 LAN 的 rsync 落在干净目录上——`e3_external.py` 的 bio 阶段每 10 图 append 一次 bio.csv，两节点同写会把行交错在一起。同时在 `runs/pivot/_e2_queue` 中为 36 个远端作业 id **预置锁目录**（owner.json 标注归属 LAN、无 pid），使任何用旧作业表启动的本地 worker 都无法认领它们。另两个 worker（44224/44688）正在跑 `continued` 训练，其旧作业表中的远端 E3 条目已被上述锁挡住，故不打断训练、不重启。
-  **撤回 11:55 的 E3 `continued` 追加**：协调者已明确列出两节点各自的检查点清单，均不含 `continued`，故 `e3_checkpoints()` 恢复为 02:00 冻结的 11 个。**后果需协调者知悉**：外部终点 ΔAUC 目前只有 `ReliSeg − baseline` 这一个对比，没有同预算对照，13:30 评审对域内 Δr 提出的"更多训练"混淆在 E3 上仍然敞着。
+  **撤回 11:55 的 E3 `continued` 追加**：负责人已明确列出两节点各自的检查点清单，均不含 `continued`，故 `e3_checkpoints()` 恢复为 02:00 冻结的 11 个。**后果需负责人知悉**：外部终点 ΔAUC 目前只有 `ReliSeg − baseline` 这一个对比，没有同预算对照，13:30 评审对域内 Δr 提出的"更多训练"混淆在 E3 上仍然敞着。
 - 2026-09-17 12:10 **E3 `clf` 预注册默认值锁定并留指纹（供 LAN 节点核对 src/ 同步）**：内容见 11:35 条。本仓库不是 git 仓库，故以文件指纹代替 commit：
   `src/pivot/e3_external.py` SHA-256 = `80acee935bf404c366d55deef2850ae568d21e0e89f8926b4727c1cdbd129809`，mtime 2026-09-17 11:32:58，33,451 字节。
   LAN 节点同步 src/ 后应校验该哈希一致；若不一致，说明拿到的是锁定前的版本，必须重新同步后再跑分类阶段（bio 阶段不读这些常量，可先跑）。相关文件同刻指纹：`e2_run.py` 46c54b341a75282a…（本地队列划分，LAN 不需要一致）、`src/data/external.py` 6e96340dd5c61bc9…（REFERABLE_THRESHOLD=2 的来源，必须一致）、`e2_analysis.py` 672e13648901a3fb…（仅本地 E2 分析用）。
 - 2026-09-17 12:08 **E2 首版结果与应对**：CF-Loss 忠实移植验证通过（L_FD/L_vd 与参考实现差 ≤ 4e-9）。FIVES seed0 主终点：density/length/FD Δr 的 CI 均含零——FIVES 基线已近天花板（r 0.90–0.98），与"保真度限制效用"的命题一致但不提供正向证据；HRF（开发集）有充分余量。安全终点：FIVES 全部臂 clDice 非劣；HRF 上 cfloss 与 reliseg_nocl 三种子均突破 clDice 边际，reliseg（保留 clDice）通过；FIVES ReliSeg 的 PVBM 迂曲度 Δbias +0.90σ 突破 0.25σ 边际 → 按预注册标记为 collateral damage。修正一个 FIVES bio 阶段的图像匹配缺陷（训练/测试同名 stem，99/200 错配）后重算。应对：(1) 评审要求"FIVES 零结果需配独立复现集"→ 寻找未触碰的高分辨率公开血管掩膜数据集（候选 MAPLES-DR、UoA-DR、LES-AV、IOSTAR）作预注册独立复现；(2) E3 外部终点补同预算对照：LAN 队列增加 FIVES `continued` × 3 种子。
-- 2026-09-17 12:15 **E2_REPORT.md 增补三节（协调者指示）**：(1) §0 Coverage——由磁盘上的 bio.csv 逐格推导的覆盖表，列出每个 (dataset × config × checkpoint) 的完成种子数，partial/PENDING 逐行标注；报告可以在网格跑完之前生成，缺的行是"尚未"而不是"零"。(2) §5 零样本（CHASE_DB1 / STARE）改为**逐种子**呈现：每个 source model × config × seed 的 r_pearson / r_spearman / bias / resid_sd，以及对 `baseline` 与 `continued` 两个参照的 Δr 与配对 bootstrap CI——这两个集合是开发集之外**唯一**有掩膜且从未被任何探针触碰的证据，n 只有 8（CHASE）与 10（STARE），种子均值会掩盖比它总结的更多东西，故不做池化。报告中明写 n=8 时 Pearson r 的 95% 区间约 ±0.5 宽、STARE 的 σ 来自其自身 GT 的稳健尺度（无 Gate A 训练尺度）。(3) 新增 §6b HRF 开发集全种子 Δr（对两个参照，池化 + 逐种子）并附 clDice 与迂曲度安全旗标。
+- 2026-09-17 12:15 **E2_REPORT.md 增补三节（统一安排）**：(1) §0 Coverage——由磁盘上的 bio.csv 逐格推导的覆盖表，列出每个 (dataset × config × checkpoint) 的完成种子数，partial/PENDING 逐行标注；报告可以在网格跑完之前生成，缺的行是"尚未"而不是"零"。(2) §5 零样本（CHASE_DB1 / STARE）改为**逐种子**呈现：每个 source model × config × seed 的 r_pearson / r_spearman / bias / resid_sd，以及对 `baseline` 与 `continued` 两个参照的 Δr 与配对 bootstrap CI——这两个集合是开发集之外**唯一**有掩膜且从未被任何探针触碰的证据，n 只有 8（CHASE）与 10（STARE），种子均值会掩盖比它总结的更多东西，故不做池化。报告中明写 n=8 时 Pearson r 的 95% 区间约 ±0.5 宽、STARE 的 σ 来自其自身 GT 的稳健尺度（无 Gate A 训练尺度）。(3) 新增 §6b HRF 开发集全种子 Δr（对两个参照，池化 + 逐种子）并附 clDice 与迂曲度安全旗标。
   **顺带修掉一个会污染表的缺陷**：`e2_zeroshot.csv` 原先把含两个 reference 的 Δr 表按不含 `reference` 的键合并，会把每一行复制成两行；改为按 reference 透视成 `d_r_vs_baseline` / `d_r_vs_continued` 两组列，每个 (target, source, config, seed, biomarker, pipeline) 恰好一行；完整 Δr 表另存 `e2_zeroshot_delta.csv` 与 `e2_zeroshot_delta_pooled.csv`。
   **像素安全终点已经是全网格终值**：它来自推理阶段的 `pred*/pixel_metrics.csv`，不依赖 CPU 生物标志物阶段。HRF 上 `cfloss`（ΔclDice −0.0214…−0.0254）与 `reliseg_nocl`（−0.0122…−0.0205）在三个种子上**全部突破** 0.01 的非劣边界，而保留 clDice 的 `reliseg`（−0.0048）通过——这正是 clDice 安全约束被预注册的理由：去掉 clDice、或改用完全丢弃 Dice/clDice 的已发表 CF-Loss，在 HRF 上要以拓扑为代价。FIVES 上各臂均在 ±0.01 内。
 
@@ -204,11 +204,11 @@
 - 2026-09-17 13:05 **待用户完成的一步**：MAPLES-DR 要补齐到 198 张、并把镜像 JPEG 换成官方 MESSIDOR TIFF，需有人在 <https://www.adcis.net/en/third-party/messidor/> 填表（姓名/邮箱/单位/国家/GDPR 同意 + 邮箱验证）下载 Base11.zip…Base34.zip，把 198 个 `<name>.tif` 放进 `exp/data/maplesdr/raw/images/` 即可，装载器已优先读该目录。未代填表格（需真实个人身份信息）。
 - 2026-09-17 13:15 **独立复现实验 E4 预注册（在任何复现集训练/评估之前锁定）**：主复现集 Fundus-AVSeg（n=100，FOV 直径 1238/2080 px，四类疾病标签，CC BY 4.0；从未用于本项目任何选择）。设计：5 折交叉验证（按官方 80/20 划分为第 1 折，其余随机分层折，固定种子），每折训练基线 U-Net（与 FIVES/HRF 同配方、同分辨率约定 1536/768），再以同起点微调 {continued, reliseg, cfloss}（50 epoch，last.pt），得到 100 张折外预测。主终点：折外 Δr（reliseg − continued；同时报 − baseline）对 density/total_length/FD（skan），配对 bootstrap 95% CI；安全终点：clDice 非劣 0.01、tortuosity/density 边际同前；次终点：四类 macro-AUC 三臂（GT / baseline / reliseg，n=100，配对 ΔAUC）——同时成为第三个神谕臂队列。次复现集 MAPLES-DR（162 张可用；掩膜为网络预标注的人工修正，笔画最粗，须在论文声明）：仅零样本评估全部 E2 检查点，按 FOV 直径分层：≥1380 px 为分析层（71 张），909 px 层预先声明为低分辨率阴性对照。E3 Messidor-2 队列在分类阶段剔除与 MAPLES-DR 重叠的 162 张（`exp/data/external/messidor2/overlap_maplesdr.csv`，1,744→1,582），剔除在 clf 阶段以显式参数执行。以上任一结果为阴性均如实报告；不得按复现集结果更改设计。
 - 2026-09-17 13:15 **paper2 第 1 轮评审的 C1 侧实现（分析+稿件，未触碰 E2/E3 数字）**：(1) 新脚本 `src/pivot/e1_topology_image.py`：拓扑轴改为**图像级估计量**，输出 `results/pivot/e1_topology_image.csv`（每 dataset×biomarker×修复臂×种子的 mean|ΔB|/σ、RMS ΔB/σ、配对 Δ|误差|，2000 次图像 bootstrap；另含 `macro_primary4`/`macro_all8` 伪标志物以便给修复表一个配对 CI）与 `results/pivot/e1_topology_matched.csv`（像素预算匹配对照的配对差 H_net，bootstrap **按 image_id 聚类**）。**σ 轴的最后一个例外已消除**：H_net 不再用 all-mask σ，而是由 `absdB/cabsdB × nativef ÷ sigmatr` 重算到训练集原生 σ。结果：实测逐图 mean|ΔB| 0.006–0.115σ、RMS 0.006–0.351σ；逐事件拓扑特异超额 0.000–0.020σ，配对 CI 排除零但上界 ≤0.037σ（即"有界小效应"而非"证据缺失"）。(2) `src/pivot/p3_downstream.py` 增加 `skan4` 特征集与 `--featuresets/--sources/--merge`；`src/pivot/e1_oracle.py` 按特征集分块输出并用**同一面板**计算保真度摘要。冻结的 4 项 skan 主面板下游结果：HRF 参考差 +0.2170 [+0.1188,+0.3323]（logreg）、+0.1800 [+0.0615,+0.3052]（gbdt）均排除零；FIVES 四格 CI 全部跨零且三格点估计为负（−0.0027/−0.0218/0.0000/−0.0319）——即**预测特征分类器在 FIVES 上不劣于参考掩膜特征**，这是"参考臂是基准而非上界"的直接证据，"oracle ceiling"措辞已全文删除。(3) `src/pivot/e5_reliability_flag.py` 的 flag validity 增加两侧 bootstrap p（(b+1)/(B+1) 修正）与 `n_boot` 列，并加 `--only flag`（未重跑昂贵的 gating）。主定义由 CV 改为 **SD/σ_b**；FIVES 显著列由 8 列中 6 列降为 3 列（主面板 4 列中 2 列），如实报告并将 CV 降为敏感性分析。(4) 论文侧：标题改为 TITLE_NOTES 候选 2（去排他性、保留 fidelity、oracle→reference-mask）；Messidor-2 改 1,744；外部集全部改为图像级重采样并删除全部 patient-level 声称；检查点矛盾以"删除接受门"方式消解，安全边际数值化；新增 5 张 matplotlib 图（`paper2/tools/fig_*.py`，经 `src/eval/savefig_util.py`）；8 列面板、harmonisation 明细、flag gating、per-seed 表移入 `paper2/sections/supplement.tex`。映射见 `paper2/REVIEW_R1_RESPONSE.md`。
-- 2026-09-17 13:15 **E3 预注册增补：Messidor-2 排除 MAPLES-DR 重叠的 162 张**（协调者指示，已写入 `e3_external.py`）。清单 `exp/data/external/messidor2/overlap_maplesdr.csv`（163 行 = 表头 + 162 条，键 `messidor2_id`，另带 maples_name / split / 尺寸 / score / margin_sd）。核验：162 个 id **全部**能在 `load_external('messidor2')` 的 1,744 条记录中命中，无一缺失，排除后 **1,744 → 1,582**。
+- 2026-09-17 13:15 **E3 预注册增补：Messidor-2 排除 MAPLES-DR 重叠的 162 张**（统一安排，已写入 `e3_external.py`）。清单 `exp/data/external/messidor2/overlap_maplesdr.csv`（163 行 = 表头 + 162 条，键 `messidor2_id`，另带 maples_name / split / 尺寸 / score / margin_sd）。核验：162 个 id **全部**能在 `load_external('messidor2')` 的 1,744 条记录中命中，无一缺失，排除后 **1,744 → 1,582**。
   **只在 clf 阶段排除，绝不在 bio 阶段排除**：`run_bio` 一行不改，bio.csv 保留它测过的每一行，于是测量阶段仍然逐位可复现，而排除始终是一个**单点、可审计、可逆**的分析决策。代码落点：常量 `CLF_EXCLUDE` / `CLF_EXCLUDE_COL` 与函数 `load_exclude()`；`run_clf()` 在算出 `common` 之后、任何拟合之前剔除；`summary.csv` 与 `delta.csv` 每行新增 `n_excluded` 与 `exclude_src` 两列记录来源。CLI 新增 `--exclude-list`：缺省用该数据集的预注册清单；传 `none` 可关闭，**仅供明确标注的敏感性分析**；清单文件缺失时直接报错退出而不是静默跳过。
   **重新指纹（LAN 节点需重新同步 src/ 后再跑分类阶段；bio 阶段不受影响，正在跑的可以继续）**：
   `src/pivot/e3_external.py` SHA-256 = `af65105ebf0a500ca0a70bc407ab62f5d76b03805a8057a6b1fcf8a8e9f6c1a5`，mtime 2026-09-17 13:11:15，36,579 字节（旧值 `80acee93…`，33,451 字节，已作废）。
-- 2026-09-17 13:15 **E4 复现 agent 与本队列共用两块 GPU**：其作业仅在某卡空闲显存 ≥ 6 GB 时启动。本地 worker 若因此 OOM，**按约定上报协调者，不盲目重试**——`e2_run.py` 的 worker 在作业失败后会把它记入 `fails` 并不再重试，因此 OOM 会表现为 `[e2] FAILED <job id>`，不会变成重试风暴；届时以该行为准上报。当前占用：两块卡各 20 GB，训练期约 10-12 GB/卡。
+- 2026-09-17 13:15 **E4 复现作业 与本队列共用两块 GPU**：其作业仅在某卡空闲显存 ≥ 6 GB 时启动。本地 worker 若因此 OOM，**按约定上报负责人，不盲目重试**——`e2_run.py` 的 worker 在作业失败后会把它记入 `fails` 并不再重试，因此 OOM 会表现为 `[e2] FAILED <job id>`，不会变成重试风暴；届时以该行为准上报。当前占用：两块卡各 20 GB，训练期约 10-12 GB/卡。
 
 - 2026-09-17 13:20 **E3/IDRiD 在 LAN 节点跑完（9 个主检查点）并已回拉**：12:14:20 启动 → 13:19:35 全部
   完成，**65 分 15 秒**跑完 9×516 = 4,644 张 4288×2848 推理 + skan 生物标志物，波次等效
@@ -227,7 +227,7 @@
   已预建（1,359 s）——**必须预建**，否则 9 个并发 worker 会同时写同一个 `fov/*.png`。
   APTOS 的 FOV 预建同时在跑（13:17 时 2,132/3,662）。Messidor-2 中位 3.3 MP、APTOS 中位
   3.1 MP，均约为 IDRiD 12.2 MP 的 1/4，CPU 端成本随之下降、瓶颈转到 GPU，ETA 待实测修正。
-- 2026-09-17 13:16 **E3 预注册脚本第二次指纹核验（协调者要求，Messidor-2 排除名单加入 clf 阶段）**：
+- 2026-09-17 13:16 **E3 预注册脚本第二次指纹核验（项目要求，Messidor-2 排除名单加入 clf 阶段）**：
   `src/pivot/e3_external.py` SHA-256 = `af65105ebf0a500ca0a70bc407ab62f5d76b03805a8057a6b1fcf8a8e9f6c1a5`
   （36,579 字节）、`data/external/messidor2/overlap_maplesdr.csv` SHA-256 =
   `31ef72bf3ac3504a1ff395aca6dfcf727cb54f1da7b4ef0eb43d61a66918fc79`（15,101 字节），
@@ -266,7 +266,7 @@
   ODIR-5K 原生仅 512×512（in/out 绿通道比 289.7，FOV 占比 0.79），按预注册仍为敏感性集，
   排在 APTOS 之后最后跑（`remote/lan2_jobs_odir5k.txt`，12 个检查点，由
   `lan2_e3_chain.sh` 在前序 driver 退出后自动启动）。
-- 2026-09-17 14:52 **评审建议的两项分析已跑完 + E4 写入稿件（协调者 13:19 指示）**：(1) `src/pivot/e1_outer_boot.py` → `results/pivot/e1_outer_boot.csv`：参考差的**外层 bootstrap**，每一次抽样重跑整套流程（折划分 + 两臂全部拟合），折标签挂在**图像**上使自助重复样本不会跨折泄漏，两臂共用同一抽样与同一折。点估计用 p3_downstream 的折种子，因而逐位复现 `e1_oracle_downstream.csv`（自检通过）。结果：区间加宽 1.2–1.6 倍，**HRF 仍排除零**——logreg +0.2170 由 [+0.119,+0.332] 变为 **[+0.090,+0.411]**，gbdt +0.1800 由 [+0.062,+0.305] 变为 **[+0.046,+0.348]**；FIVES 四格全部加宽且仍跨零。抽样数 logreg 200 / gbdt 100（每次抽样 = 一整轮重复交叉验证；gbdt 臂单独耗时约 75 CPU-min），无一次被丢弃。落在补充材料表 S2。(2) `src/pivot/e1_dose_response.py` → `e1_dose_response.csv` + `_summary.csv`，正文 5.5 节与图 4：**参考生物标志物上的误差注入剂量-反应，两臂**——常数偏移臂（每图同一 c·σ_b）与**图像特异相关残差臂**（按本队列自身去偏残差的跨标志物相关矩阵抽 MVN，逐标志物缩放到 s_j=g_j·sqrt(1/r²−1) 以命中目标 r，实际 r 为实测）。仅 CPU，不重训练。结果：**常数偏移臂在全部剂量上逐位不变**（FIVES 0.7027、HRF 0.9704 于 0/0.25/0.5/1/2/3 σ），残差臂单调下降（FIVES 0.7027→0.5585 @ r 0.42，HRF 0.9704→0.6170 @ r 0.38），gbdt 复现同样行为；**HRF 实测点落在自己的注入曲线上**（r̄ 0.549、AUC 0.7533，对曲线 r 0.591 处 0.7517 与 r 0.487 处 0.6856），FIVES 实测点在曲线**之上**（r̄ 0.854、AUC 0.7055 对曲线约 0.64），因为其面板均值被单一迂曲度列（r 0.42）拖低而其余三列 0.91–0.98——分类器能降权一个坏特征，降权不了四个。两条限制（残差为高斯同方差、且按构造与疾病标签独立）随结果一并写明，故曲线是"给定保真度损失所必然造成的衰减"的**上界**。(3) `src/pivot/e1_fov_scale.py` → `dataset_scale.csv`：统一实测 FOV 直径 2√(A/π)（DRIVE 538 / STARE 639 / CHASE_DB1 920 / Fundus-AVSeg 1276 [1177–2080] / MAPLES-DR 909 [903–1456] / FIVES 2010 / HRF 2967 px），新生成 `tab:datasets` 与 4.1 节"画幅不是分辨率"的段落。(4) 稿件写入 **E4**：方法 3.6 节、锁定的 `tab:e4`、空的图 7（复现森林图 + 蒙特卡洛功效曲线）、结果 5.12 节；按指示如实表述为"**E2 之后前瞻锁定**的复现"而非项目初始预注册，13:30 条的全部澄清（折划分一次性固定、图像级 CV 与不可排除的双眼泄漏、每折 σ、保折 bootstrap、max-statistic 多重性、分类器折与分割折一一对齐、功效曲线）均已写入；MAPLES-DR ≥1380 px 层称"**较高分辨率**"，909 px 层为预先声明的低分辨率阴性对照，掩膜表述为"网络预标注的人工修正"（预标注 vs 最终 Dice 0.783）。(5) 引用：`deng2025fundusavseg`（Sci Data 12, 1298, 2025, 10.1038/s41597-025-05381-2）与 `lepetitaimon2024maplesdr`（Sci Data 11, 914, 2024, 10.1038/s41597-024-03739-6），均经 Crossref 核验并记入 BIB_AUDIT（含"文章 CC BY-NC-ND / 数据 CC BY 4.0"的区分）。(6) Messidor-2 改为"发行 1,744，分类阶段 1,582"。(7) 顺手修掉一个历代继承的排版缺陷：elsarticle 的 `\paragraph` 自带句点，48 处 `\paragraph{标题.}` 原本排成"标题.."。构建：59 页（正文含参考文献 52 页，补充材料 7 页），无未定义引用/交叉引用，66 个 `\todo`（正文 16 + 三张锁定骨架表 50）。映射见 `paper2/REVIEW_R1_RESPONSE.md` §2b。
+- 2026-09-17 14:52 **评审建议的两项分析已跑完 + E4 写入稿件（负责人 13:19 指示）**：(1) `src/pivot/e1_outer_boot.py` → `results/pivot/e1_outer_boot.csv`：参考差的**外层 bootstrap**，每一次抽样重跑整套流程（折划分 + 两臂全部拟合），折标签挂在**图像**上使自助重复样本不会跨折泄漏，两臂共用同一抽样与同一折。点估计用 p3_downstream 的折种子，因而逐位复现 `e1_oracle_downstream.csv`（自检通过）。结果：区间加宽 1.2–1.6 倍，**HRF 仍排除零**——logreg +0.2170 由 [+0.119,+0.332] 变为 **[+0.090,+0.411]**，gbdt +0.1800 由 [+0.062,+0.305] 变为 **[+0.046,+0.348]**；FIVES 四格全部加宽且仍跨零。抽样数 logreg 200 / gbdt 100（每次抽样 = 一整轮重复交叉验证；gbdt 臂单独耗时约 75 CPU-min），无一次被丢弃。落在补充材料表 S2。(2) `src/pivot/e1_dose_response.py` → `e1_dose_response.csv` + `_summary.csv`，正文 5.5 节与图 4：**参考生物标志物上的误差注入剂量-反应，两臂**——常数偏移臂（每图同一 c·σ_b）与**图像特异相关残差臂**（按本队列自身去偏残差的跨标志物相关矩阵抽 MVN，逐标志物缩放到 s_j=g_j·sqrt(1/r²−1) 以命中目标 r，实际 r 为实测）。仅 CPU，不重训练。结果：**常数偏移臂在全部剂量上逐位不变**（FIVES 0.7027、HRF 0.9704 于 0/0.25/0.5/1/2/3 σ），残差臂单调下降（FIVES 0.7027→0.5585 @ r 0.42，HRF 0.9704→0.6170 @ r 0.38），gbdt 复现同样行为；**HRF 实测点落在自己的注入曲线上**（r̄ 0.549、AUC 0.7533，对曲线 r 0.591 处 0.7517 与 r 0.487 处 0.6856），FIVES 实测点在曲线**之上**（r̄ 0.854、AUC 0.7055 对曲线约 0.64），因为其面板均值被单一迂曲度列（r 0.42）拖低而其余三列 0.91–0.98——分类器能降权一个坏特征，降权不了四个。两条限制（残差为高斯同方差、且按构造与疾病标签独立）随结果一并写明，故曲线是"给定保真度损失所必然造成的衰减"的**上界**。(3) `src/pivot/e1_fov_scale.py` → `dataset_scale.csv`：统一实测 FOV 直径 2√(A/π)（DRIVE 538 / STARE 639 / CHASE_DB1 920 / Fundus-AVSeg 1276 [1177–2080] / MAPLES-DR 909 [903–1456] / FIVES 2010 / HRF 2967 px），新生成 `tab:datasets` 与 4.1 节"画幅不是分辨率"的段落。(4) 稿件写入 **E4**：方法 3.6 节、锁定的 `tab:e4`、空的图 7（复现森林图 + 蒙特卡洛功效曲线）、结果 5.12 节；按指示如实表述为"**E2 之后前瞻锁定**的复现"而非项目初始预注册，13:30 条的全部澄清（折划分一次性固定、图像级 CV 与不可排除的双眼泄漏、每折 σ、保折 bootstrap、max-statistic 多重性、分类器折与分割折一一对齐、功效曲线）均已写入；MAPLES-DR ≥1380 px 层称"**较高分辨率**"，909 px 层为预先声明的低分辨率阴性对照，掩膜表述为"网络预标注的人工修正"（预标注 vs 最终 Dice 0.783）。(5) 引用：`deng2025fundusavseg`（Sci Data 12, 1298, 2025, 10.1038/s41597-025-05381-2）与 `lepetitaimon2024maplesdr`（Sci Data 11, 914, 2024, 10.1038/s41597-024-03739-6），均经 Crossref 核验并记入 BIB_AUDIT（含"文章 CC BY-NC-ND / 数据 CC BY 4.0"的区分）。(6) Messidor-2 改为"发行 1,744，分类阶段 1,582"。(7) 顺手修掉一个历代继承的排版缺陷：elsarticle 的 `\paragraph` 自带句点，48 处 `\paragraph{标题.}` 原本排成"标题.."。构建：59 页（正文含参考文献 52 页，补充材料 7 页），无未定义引用/交叉引用，66 个 `\todo`（正文 16 + 三张锁定骨架表 50）。映射见 `paper2/REVIEW_R1_RESPONSE.md` §2b。
 
 - 2026-09-17 14:50 **E4 分析管线在真跑之前用合成数据端到端验证**：脚本 `scratchpad/test_e4_analyse.py`（不入库）用真实的 100 张 Fundus-AVSeg **GT** 生物标志物加乘性噪声伪造四个臂的 `bio.csv` 与 `pixel_metrics.csv`（噪声尺度 baseline 0.20 / continued 0.19 / reliseg 0.12 / cfloss 0.25），在**隔离目录**里跑 `cmd_analyse`，确认五张表与报告全部生成且形状正确：`e4_fidelity.csv` 224 行（oof_pooled + class_adjusted + 逐折）、`e4_delta.csv` 240 行（5 组对比 × (池化 + 5 个留一折) × 8 列标志物）、`e4_pixel.csv` 4 行、`e4_safety.csv` 50 行、`e4_downstream.csv` 32 行、`replication_rule.json`、`E4_REPORT.md`。合成数字无意义，只验证管线。**顺带修两处**：(1) 下游 AUC 的 2000 次配对 bootstrap 原用 `sklearn.roc_auc_score`（每次重排序重校验），改为排名式 Mann-Whitney 实现 `fast_macro_auc_factory`，**每次使用前都先与 sklearn 在同一组概率上对拍，差 > 1e-9 直接抛错**而非静默替换；(2) 下游的 GBDT 默认把 OpenMP 铺满 24 核，与 E2/E4 的生物标志物 worker 和两个训练互相抢核，实测该阶段吃掉 34,573 CPU-秒仍未跑完；`cmd_analyse` 现在在导入 sklearn 之前把 `OMP/OPENBLAS/MKL/NUMEXPR_NUM_THREADS` 钉到 `--threads`（默认 4），同样的分析 2 分钟跑完。
 - 2026-09-17 14:55 **MAPLES-DR 预标注的几何问题（13:30 (9) 的敏感性分析）**：deposit 的 `AdditionalData/preannotations/Vessels` **200 张全部是 1500×1500 的方形画布**，而终稿掩膜与图像是 MESSIDOR 原生的 1440×960 / 2240×1488 / 2304×1536——直接拿来与原生 FOV 相与会 broadcast 报错（bio watcher 已因此失败 22 次，已暂停该开关后修复）。画布对应"**边长 = FOV 直径、以 FOV 中心对齐的正方形**"：对 scale（0.94–1.18 × FOV 宽）与中心偏移（水平 ±30 px、垂直 ±40 px）做网格搜索，8 张受检图像的 Dice 最优点**全部落在 scale = 1.00、偏移 (0,0)**，故该摆放是被识别出来的、不是拟合出来的。实现为 `maples_preannot_path()`，最近邻重采样回原生分辨率并缓存到 `data/maplesdr/preannot_native/`。**必须写进论文的限制**：把 1500 px 画布最近邻降采样到 1380–1452 px 的方形会削掉最细的血管，而这正是生物标志物要测的结构；重映射后预标注 vs 终稿的 Dice 均值为 **0.726**（162 张），`research/08` 记的 0.783 是在 1500×1500 画布上测的、不含重采样损失。因此预标注臂只作**方向性**的标注约定检验，不作第二个精确锚点。
@@ -277,7 +277,7 @@
 - 2026-09-17 15:12 **E4 加开第 2/3/4 条 GPU 通道（E2 训练队列已空）**：`e2_run status` 显示 E2 已无 READY/WAIT 的 train 作业（最后两个 HRF 单项消融训练完成），两卡空闲 12.8 / 13.8 GB，故为每卡再起一条 E4 通道（`launch_gpu{0,1}b.bat`，pid 48732 / 26436，日志 `driver_gpu{0,1}b.log`），**门限提高到 9216 MB**（原两条仍为 6144）——一个 E4 训练约占 7 GB，9 GB 门限保证同卡第二个训练启动时仍留有余量给 E2 的 E3 推理（约 1.5 GB）。四条通道立刻把 5 个基线训练全部并行开出，并让折 0 的第一个微调（`e4:ft:f0:continued`）在 15:09 就开始，而不必等全部基线跑完。实测两个已完成的基线：折 1 **96.3 min**、折 0 **104.7 min**。
 - 2026-09-17 15:12 **E4 收尾自动化（`e4_replication finish`，pid 35548，日志 `runs/pivot/e4/finish.log`）**：GPU 通道与 CPU 生物标志物 watcher 都是分离进程，缺的只是最后一步分析。`finish` 每 5 min 轮询，一旦 20 个折×臂预测目录都有 `bio.csv` 且 GT 表就位就跑一次 `analyse`；一旦 24 个 MAPLES 目录就位就跑 `maples-analyse`（正式锚点 + 预标注锚点各一次）并回头刷新一次报告的 MAPLES 小节。只轮询、不 kill 任何进程，每个分析只跑一次，24 h 超时退出。**修订后的 ETA（四通道）**：基线全部完成约 16:50；15 个微调约 19:00；域内推理约 19:15；生物标志物滞后约 30 min → **E4 主终点约 20:00 可读**（原两通道估计为 23:30）。MAPLES 零样本推理约 19:45 跑完，其 3,888 张 CPU 生物标志物约 3.1 h → **约 23:00–23:15 出零样本与预标注敏感性表**。
 
-- 2026-09-17 15:15 **13:30 条 (10) 的"参考生物标志物残差噪声剂量-反应"不由 E4 实现**（协调者指示）：论文 agent 已完成，落点 `src/pivot/e1_dose_response.py`（13:29）与 `results/pivot/e1_dose_response.csv`（13:40，295 KB）。撤回 14:50 条末尾"留待折外结果产出后补"的说法，E4 不再重复实现，避免同一量两套代码。
+- 2026-09-17 15:15 **13:30 条 (10) 的"参考生物标志物残差噪声剂量-反应"不由 E4 实现**（统一安排）：论文撰写 已完成，落点 `src/pivot/e1_dose_response.py`（13:29）与 `results/pivot/e1_dose_response.csv`（13:40，295 KB）。撤回 14:50 条末尾"留待折外结果产出后补"的说法，E4 不再重复实现，避免同一量两套代码。
 
 - 2026-09-17 15:30 **生物标志物 watcher 在 14:47 静默死亡，已查明原因并重启（协议相关：期间没有任何生物标志物被计算）**。症状：`runs/pivot/e4/bio_watch.log` 最后写入时间停在 **14:47**，此后 41 分钟无输出，`Win32_Process` 里既无 `e4_replication bio` 也无对应的 cmd.exe 宿主（四条 GPU 通道与 finish 进程均健在）。原因：**我在 14:53 与 14:55 两次就地编辑了正在运行的 `bio_watch.bat`**——cmd.exe 是按字节偏移逐行重读批处理文件的，改变行长度会让偏移错位并终止循环。日志里那 5 次 `1500×1500 vs 1488×2240` 的 ValueError **全部早于 14:57 的代码修复**，属陈旧记录，不是修复无效；手工核验重映射在 20 张图上 0 处尺寸不符。**两项处置**：(1) `cmd_bio` 的三个 GT 阶段改为各自 try/except（`_try_gt`），单个阶段失败只记录并继续——此前**可选的**预标注锚点一崩就把整趟（含 20 个折×臂目录的测量）全部带走，这正是 14:40–14:47 之间什么都没算出来的原因；失败摘要打印在收尾行。(2) 新建 `runs/pivot/e4/bio_watch2.bat`（文件头写明"运行期间禁止就地编辑，要改就新建 bio_watch<N>.bat 重启"）并分离启动，pid 51164。**此故障不影响任何已产出的结果**：期间 GPU 队列照常推进，只是生物标志物阶段停摆 41 分钟；按当前进度（基线仍在跑，尚无推理产出）没有造成关键路径延误，ETA 不变。
 
@@ -296,18 +296,18 @@
   （12:05 分工条：HRF seed0 归本地），与 LAN 结果互不覆盖，`lan2_pull.sh` 的文件数告警即源于此。
 - 2026-09-17 16:12 **两条 bio 通道漏掉 30 个新增单元（作业表快照问题，非失败）**：11:11 与 11:26 启动的两条 bio 通道在启动时就把 `bio_jobs()` 的结果固化在内存里（104 个），而 `continued` 臂与三个单项消融是 11:29-11:30 才加入 CONFIGS/ABLATIONS 的，于是这 30 个新单元**从未出现在它们的作业表中**；两条通道跑完各自的 104 个后正常退出并打印 `worker done, not-done=[]`——那句话说的是"我这张表上的都做完了"，不是"全网格都做完了"。这不是失败、不是 OOM、也没有陈旧锁：核对确认这 30 个 id **一个锁都没有**（从未被认领），因此新通道可以全部领走。
   审计结果（16:11）：`train 33/33`、`infer 132/132` **全部完成**（含 continued 与单项消融的域内 last+fid 及 CHASE/STARE 零样本推理），缺的只有 30 个 bio：continued 域内 12（6 格 × last/fid）、单项消融 6（3 格 × last/fid）、continued 零样本 12（2 目标 × 2 数据集 × 3 seed）。已启动第三条通道（pid 51032，`--procs 12`，日志 `runs/pivot/_e2_logs/bio3_20260917_161245.log`）。
-  **教训（写给后续 agent）**：`e2_run.py` 的 worker 在启动时构建一次作业表，此后不再重建；**任何对 CONFIGS / ABLATIONS / build_jobs 的修改，都必须重启全部相关 worker，否则新作业会被静默跳过**。`worker done` 一行不能作为阶段完成的判据，判据应当是 `e2_run status` 的全量计数。
-- 2026-09-17 16:14 **最终分析改为限线程运行**：机器 CPU 已达 92.5%（E3 的两条通道 + E4 复现 agent 共用），sklearn/BLAS 默认会开满核心并与 bio 抢占。改用 `OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=NUMEXPR_NUM_THREADS=6` 运行 `e2_analysis`。同时**停掉了 11:55 启动的旧链（pid 15552，未限线程）**并换成限线程版（pid 46272，日志 `e2_final_chain2.log`）——两条链会在 bio 结束后同时触发分析、并发写同一批 CSV，必须只保留一条。
+  **教训（写给后续操作）**：`e2_run.py` 的 worker 在启动时构建一次作业表，此后不再重建；**任何对 CONFIGS / ABLATIONS / build_jobs 的修改，都必须重启全部相关 worker，否则新作业会被静默跳过**。`worker done` 一行不能作为阶段完成的判据，判据应当是 `e2_run status` 的全量计数。
+- 2026-09-17 16:14 **最终分析改为限线程运行**：机器 CPU 已达 92.5%（E3 的两条通道 + E4 复现作业 共用），sklearn/BLAS 默认会开满核心并与 bio 抢占。改用 `OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=NUMEXPR_NUM_THREADS=6` 运行 `e2_analysis`。同时**停掉了 11:55 启动的旧链（pid 15552，未限线程）**并换成限线程版（pid 46272，日志 `e2_final_chain2.log`）——两条链会在 bio 结束后同时触发分析、并发写同一批 CSV，必须只保留一条。
 - 2026-09-17 16:28 **FIVES × ODIR-5K 的 9 个 E3 作业改判归 LAN 节点，已在本地队列加锁隔离**（ETA 审计 `results/pivot/ETA_GPU_SCALING.md` 发现）。12:05 划界时把整个 ODIR-5K 敏感性集留给本地，理由是 LAN 只承担三个主队列；现更正为 **ODIR-5K 上的全部 FIVES 检查点（含 `continued`）由 LAN 承担，排在其 APTOS 之后**。
   `e2_run status` 核对（16:28）：本地 e3 队列确为 17 个，其中 `e3:odir5k:fives:s{0,1,2}:{baseline,reliseg,cfloss}` 正是这 9 个。已用与 12:05 相同的方式预置锁目录（`owner.json` 无 pid、标注归属 LAN），使任何本地 worker（包括用旧作业表启动的）都无法 `claim()`。另**预防性**锁住 `e3:odir5k:fives:s{0,1,2}:continued` 三个 id——它们当前不在 `e3_checkpoints()` 中，但若 `continued` 日后被重新加入，这三个作业会自动出现，锁先放在那里可免于再次竞争。
   **本地保留不动的 8 个**：`e3:idrid:hrf:s0:{baseline,reliseg}`（正在跑，锁属本地 worker pid 44224 / 44688）、`e3:messidor2:hrf:s0:{baseline,reliseg}`、`e3:aptos2019:hrf:s0:{baseline,reliseg}`、`e3:odir5k:hrf:s0:{baseline,reliseg}`。核验后本地可认领的 e3 作业为 6 个（另 2 个在跑），与上述划分逐一吻合。
   累计 LAN 归属的隔离锁：36（12:05，三个主队列 × FIVES）+ 12（本条）= 48。
 
-- 2026-09-17 15:42 **E4 生物标志物分工：MAPLES-DR 的 24 个零样本单元移交 CPU 服务器 agent（32 核 EPYC 9654 租用机）**。本地 watcher 换为 `runs/pivot/e4/bio_watch3.bat`（pid 38868），命令去掉 `--maples --preannot`，只剩 `bio --procs 6`；`bio_units(include_maples=False)` 实测返回 **20 个单元且 dataset 仅 fundusavseg**（此前 44），`cmd_bio` 也不再进入两个 MAPLES GT 阶段——日志尾行由 "44 not ready" 变为 "20 not ready" 即为证据。v1/v2 的 .bat 宿主已停止，不得再启用（同一目录下 v3 文件头写明禁止就地编辑）。**归属划分**：本地保留 20 个 `e4_f{0..4}_{baseline,continued,reliseg,cfloss}`（fundusavseg）与 `e4_gt_fundusavseg.csv`；远端负责 24 个 `e4mp_{fives,hrf}_s{0,1,2}_{baseline,continued,reliseg,cfloss}` 的 `bio.csv`。两个 MAPLES 锚点已在本地算完（`e4_gt_maplesdr.csv` 13:46、`e4_gt_maplesdr_preannot.csv` 15:35），远端不重算、不覆盖。`cmd_maples_analyse` 与 `cmd_finish` 读的就是 `runs/pivot/e4/maples/<tag>/bio.csv`，故收尾逻辑无需改动。**移交时点无冲突**：`runs/pivot/e4/maples/` 目录此刻尚不存在（24 个推理作业排在队列最后），不存在半写的 manifest。
+- 2026-09-17 15:42 **E4 生物标志物分工：MAPLES-DR 的 24 个零样本单元移交 CPU 服务器（32 核 EPYC 9654 租用机）**。本地 watcher 换为 `runs/pivot/e4/bio_watch3.bat`（pid 38868），命令去掉 `--maples --preannot`，只剩 `bio --procs 6`；`bio_units(include_maples=False)` 实测返回 **20 个单元且 dataset 仅 fundusavseg**（此前 44），`cmd_bio` 也不再进入两个 MAPLES GT 阶段——日志尾行由 "44 not ready" 变为 "20 not ready" 即为证据。v1/v2 的 .bat 宿主已停止，不得再启用（同一目录下 v3 文件头写明禁止就地编辑）。**归属划分**：本地保留 20 个 `e4_f{0..4}_{baseline,continued,reliseg,cfloss}`（fundusavseg）与 `e4_gt_fundusavseg.csv`；远端负责 24 个 `e4mp_{fives,hrf}_s{0,1,2}_{baseline,continued,reliseg,cfloss}` 的 `bio.csv`。两个 MAPLES 锚点已在本地算完（`e4_gt_maplesdr.csv` 13:46、`e4_gt_maplesdr_preannot.csv` 15:35），远端不重算、不覆盖。`cmd_maples_analyse` 与 `cmd_finish` 读的就是 `runs/pivot/e4/maples/<tag>/bio.csv`，故收尾逻辑无需改动。**移交时点无冲突**：`runs/pivot/e4/maples/` 目录此刻尚不存在（24 个推理作业排在队列最后），不存在半写的 manifest。
 - 2026-09-17 15:42 **移交的可比性前提（已同步给远端，协议相关）**：远端必须复用 `p5_eval._bio_one` 的同一估计量路径（`compute_all(..., fd_rotations=5)`，视盘由 `locate_optic_disc(image, fov, vessel_mask=None)` 仅从眼底图检测），并**直接拷贝 `exp/data/maplesdr/fov/` 而非重新生成 FOV**、使用同一套经 `_maplesdr_image_index()` 解析的 Messidor-2 镜像图像；否则 density/total_length 会因 FOV 面积差异而系统偏移，且与 E2/Fundus-AVSeg 的数字不可比。另注意 `manifest.csv` 内是**绝对 Windows 路径**，在 Linux 上需重写或复刻同构路径；bio 阶段读的是 `<tag>/mask/*.png`（不是 `pred/`）。每个目录应为 162 行。
-- 2026-09-17 17:18 **E3 三节点最终划分：本地退出 E3，GPU 让给 E4**（协调者再规划 + GPU2 agent 请求）。新增租用节点 **GPU2（2× RTX 2080 Ti，user@GPU_HOST_2:SSH_PORT）承担整个 ODIR-5K**（全部 14 个检查点 = FIVES s0-2 ×{baseline,reliseg,cfloss,continued} + HRF s0 ×{baseline,reliseg}）；**LAN 节点在其 APTOS 波次之后追加 HRF s0 ×{baseline,reliseg} 的 Messidor-2 与 APTOS**。
+- 2026-09-17 17:18 **E3 三节点最终划分：本地退出 E3，GPU 让给 E4**（负责人再规划 + GPU2 节点 请求）。新增租用节点 **GPU2（2× RTX 2080 Ti，user@GPU_HOST_2:SSH_PORT）承担整个 ODIR-5K**（全部 14 个检查点 = FIVES s0-2 ×{baseline,reliseg,cfloss,continued} + HRF s0 ×{baseline,reliseg}）；**LAN 节点在其 APTOS 波次之后追加 HRF s0 ×{baseline,reliseg} 的 Messidor-2 与 APTOS**。
   本地按同一机制（锁目录 + 无 pid 的 owner.json）新增隔离 4 个：`e3:messidor2:hrf:s0:reliseg`、`e3:aptos2019:hrf:s0:reliseg` 归 LAN；`e3:odir5k:hrf:s0:{baseline,reliseg}` 归 GPU2。至此**本地 e3 队列可认领作业为 0**。累计隔离锁 48 + 4 = 52。
-  **与协调者 17:14 消息的事实差异（已回报）**：该消息假定本地两个 worker 仍在跑 IDRiD，实际上 IDRiD 的 HRF s0 两趟**已完成**（`results/pivot/e3/idrid/e3_hrf_s0_{baseline,reliseg}/` 各 516 行 + meta.json），worker 44224/44688 随后已自行认领并正在跑 **`messidor2/e3_hrf_s0_baseline`（子进程 48140）与 `aptos2019/e3_hrf_s0_baseline`（子进程 49448）**——按新划分这两趟归 LAN。按"不动正在跑的作业"的指示**未停止**它们；其锁由本地 worker 持有（有真实 pid），脚本据此跳过、不覆盖 owner.json（覆盖只会丢失"谁在跑"的记录，并不能停止进程）。**需 LAN 侧在其波次中跳过这两个 tag，否则两节点会对同一个可续写的 bio.csv 交错追加。**
+  **与负责人 17:14 消息的事实差异（已回报）**：该消息假定本地两个 worker 仍在跑 IDRiD，实际上 IDRiD 的 HRF s0 两趟**已完成**（`results/pivot/e3/idrid/e3_hrf_s0_{baseline,reliseg}/` 各 516 行 + meta.json），worker 44224/44688 随后已自行认领并正在跑 **`messidor2/e3_hrf_s0_baseline`（子进程 48140）与 `aptos2019/e3_hrf_s0_baseline`（子进程 49448）**——按新划分这两趟归 LAN。按"不动正在跑的作业"的指示**未停止**它们；其锁由本地 worker 持有（有真实 pid），脚本据此跳过、不覆盖 owner.json（覆盖只会丢失"谁在跑"的记录，并不能停止进程）。**需 LAN 侧在其波次中跳过这两个 tag，否则两节点会对同一个可续写的 bio.csv 交错追加。**
   收尾：这两趟跑完后本地 e3 全部 done-or-fenced，两个 worker 会进入 `nothing runnable; waiting 120 s` 空转（不占显存）。届时可直接停掉 pid 44224 / 44688，本地 GPU 完全交给 E4。
 
 - 2026-09-17 17:21 **ODIR-5K 迁往新的 2×2080 Ti 机器；LAN 节点改接 HRF s0 开发集（仅 reliseg）**：
@@ -315,22 +315,22 @@
   `remote/lan2_jobs_odir5k.txt`）已 kill 并确认消失，作业表改名为
   `lan2_jobs_odir5k.txt.DISARMED_moved_to_2080ti` 以防误启。**LAN 节点上 ODIR 一趟都没跑过**
   （`results/pivot/e3/odir5k` 不存在，0 目录 0 行），故新机器 14 个检查点全部从零开始、无重复。
-  已向 2080 Ti 的 agent 确认，并转达两条实测经验：`--sw-batch 1`（712 MiB/worker，速度不变）
+  已向 2080 Ti 节点 确认，并转达两条实测经验：`--sw-batch 1`（712 MiB/worker，速度不变）
   与 **FOV 必须预建**（并发 worker 会竞写同一 `fov/*.png`）。
   (2) **HRF s0 重复作业已止损**：17:20:39 我在 LAN 上启动了 messidor2/aptos2019 × {baseline,
   reliseg} 四趟；随后得知本地机器早已在跑那两个 **baseline**（local pid 48140 / 49448）。
   17:21（各仅 10 行）kill 掉 LAN 侧两个 baseline，**未删除**，目录改名并移出结果树到
   `runs/lan_e3/_held/{messidor2,aptos2019}__e3_hrf_s0_baseline_LANpartial_held_1721`——
   既保留证据，又保证 `results/pivot/e3/<ds>/e3_hrf_s0_baseline/` 规范路径空着留给本地产物，
-  且整目录回拉不会把半截结果带回本地。协调者随后确认：**LAN 只跑 `e3_hrf_s0_reliseg`**。
+  且整目录回拉不会把半截结果带回本地。负责人随后确认：**LAN 只跑 `e3_hrf_s0_reliseg`**。
   两趟 reliseg（messidor2 + aptos2019）17:20:40 起在跑，与剩余 4 个 APTOS FIVES 作业并行
   （共 6 worker），APTOS 主 9 趟已于 17:20 前完成 7 个 + s2_continued。
 - 2026-09-17 17:23 **缺陷：`ensure_fov` 非原子写入，同数据集并发时会读到半写的 FOV PNG**（本地 `e3:messidor2:hrf:s0:reliseg` 因此崩溃，rc=1）。报错在 `_row_for` → `_imread_gray(rec['fov_path'])`：`ValueError: cannot reshape array of size 1701 into shape (36396,60828)`——imageio 因文件当时不是合法 PNG 而回退到 SPE 插件。根因是 `src/data/external.py::ensure_fov` 按需生成 FOV 掩膜且**直接写目标路径、不走临时文件+替换**；同一数据集的两趟推理并发跑在同一台机器上时，两者都会对同一批缺失的 FOV 调用 `ensure_fov`，其中一个在另一个尚未写完时读取，拿到截断图像。
   **证据表明是瞬态竞态而非坏数据**：事后用 imageio 逐个校验 messidor2 的全部 470 个 FOV PNG，**0 个损坏**——活下来的那个写进程把文件补全了；同一张图 `e3_hrf_s0_baseline` 顺利通过（当时已到 450/1744）。崩溃发生在 17:18 加锁之前；worker 失败时调用了 `release()` 删掉锁，17:18 的加锁脚本因此看到"无锁"并新建了隔离锁，故该作业现已归 LAN 且本地不会重试。
-  **处置**：本地半成品 `results/pivot/e3/messidor2/e3_hrf_s0_reliseg`（180 行、无 meta.json）改名为 `e3_hrf_s0_reliseg_LOCALpartial_crashed_1723` 并保留（不删），让 LAN 的 rsync 落在干净的规范路径上。已把竞态与规避方式（要么单进程预生成 FOV，要么每数据集只跑一个 worker）告知 LAN agent；**建议的永久修复**是让 `ensure_fov` 写同目录临时文件后 `os.replace()`，与 `src/pivot/common.py::json_dump` 已有的做法一致——因 LAN 作业正在飞行中，未擅自改动代码。
-- 2026-09-17 17:23 **E3 HRF s0 四个 tag 的最终归属（协调者裁定）**：messidor2 与 aptos2019 的 **baseline 由本地跑完**（pid 48140 / 49448，17:23 时分别在 450/1744 与 190/3662，ETA 约 19:00 与 23:15），**reliseg 归 LAN**；LAN 已于 17:21 杀掉自己的两个 baseline 重复作业（各仅写 10 行）并把半成品改名为 `*_LANpartial_held_1721` 保留。idrid 的 HRF s0 两趟归本地且已完成（各 516 行 + meta.json）；odir5k 的 HRF s0 两趟归 GPU2 节点。
+  **处置**：本地半成品 `results/pivot/e3/messidor2/e3_hrf_s0_reliseg`（180 行、无 meta.json）改名为 `e3_hrf_s0_reliseg_LOCALpartial_crashed_1723` 并保留（不删），让 LAN 的 rsync 落在干净的规范路径上。已把竞态与规避方式（要么单进程预生成 FOV，要么每数据集只跑一个 worker）告知 LAN 节点；**建议的永久修复**是让 `ensure_fov` 写同目录临时文件后 `os.replace()`，与 `src/pivot/common.py::json_dump` 已有的做法一致——因 LAN 作业正在飞行中，未擅自改动代码。
+- 2026-09-17 17:23 **E3 HRF s0 四个 tag 的最终归属（决定）**：messidor2 与 aptos2019 的 **baseline 由本地跑完**（pid 48140 / 49448，17:23 时分别在 450/1744 与 190/3662，ETA 约 19:00 与 23:15），**reliseg 归 LAN**；LAN 已于 17:21 杀掉自己的两个 baseline 重复作业（各仅写 10 行）并把半成品改名为 `*_LANpartial_held_1721` 保留。idrid 的 HRF s0 两趟归本地且已完成（各 516 行 + meta.json）；odir5k 的 HRF s0 两趟归 GPU2 节点。
   收尾计划：两个本地 baseline 跑完后，worker 44224 / 44688 将进入空转（本地 e3 已 0 个可认领），届时按显式 PID 核对命令行后停止，本地 GPU 全部交给 E4，并在此另记一条。
-- 2026-09-17 17:40 **`ensure_fov` 原子写入修复延后至 E3 全部完成（协调者裁定 (b)）**。`src/data/external.py` 带有已锁定的预注册指纹 `6e96340dd5c61bc94db6ccb4e48614f95fcae4bde0984e7e0f140de3d3e60c0c`（LAN 节点已核验两边逐位一致），`ensure_fov` 就在该文件里；在三个节点的 E3 bio 作业全部跑完并回收之前改它，会让一份协调者两次要求核验的预注册产物失效。
+- 2026-09-17 17:40 **`ensure_fov` 原子写入修复延后至 E3 全部完成（决定 (b)）**。`src/data/external.py` 带有已锁定的预注册指纹 `6e96340dd5c61bc94db6ccb4e48614f95fcae4bde0984e7e0f140de3d3e60c0c`（LAN 节点已核验两边逐位一致），`ensure_fov` 就在该文件里；在三个节点的 E3 bio 作业全部跑完并回收之前改它，会让一份负责人两次要求核验的预注册产物失效。
   **该缺陷不影响任何一个数字**：它的后果只有两种——要么读到截断 PNG 让作业直接崩溃（可见、可重跑），要么什么也不发生。它不会产生错误的生物标志物值：截断文件不可能被 imageio 当作合法掩膜读出来再算出数来。已核验的证据见 17:23 条（本地 470 个 messidor2 掩膜事后全部合法）与 LAN 节点的 5,922 个掩膜复核（0 不可读、0 退化，56,416 行 × 4 个 skan 列 0 个 NaN，全部作业 rc=0，仅有两个人为 kill 的 rc=143）。
   **在此期间的官方规避办法**：并发/分片跑同一数据集之前，**单进程预生成 FOV 缓存并核对掩膜数与记录数**（`python -m src.data.check_external --fov <name>`）。已写入 `exp/data/EXTERNAL_DATASETS.md` 的「FOV generation」一节，作为硬性前置条件，含复现该崩溃的报错原文、"不同数据集并行安全、同一数据集并发不安全"的界线，以及 LAN 节点的实测时间线作为范例。
   **E3 全部完成后**：用同目录临时文件 + `os.replace()` 修复（与 `src/pivot/common.py::json_dump` 一致），重新计算并发布 `external.py` 的指纹，另记一条，并把新哈希同步给 LAN 与 GPU2 两个节点重新核验。
@@ -340,7 +340,7 @@
   **新发现的缺失依赖（会影响任何新建环境）**：`src/data/datasets.py::_maplesdr_grades` 用 pandas 读 `diagnosis_infos.xls`，需要 **`xlrd`（本地为 2.0.2）**，但它不在 `runs/pip_freeze.txt` 里（本地 Anaconda 环境自带）。新环境若不补装，`load_dataset("maplesdr")` 直接抛 `ModuleNotFoundError: xlrd`。已在节点上按本地版本补装并记录于 ENV_cpu.md。
   **估计器跨平台一致性实测（非假设）**：在节点上以 `p5_eval._bio_one` 对 MAPLES-DR 前 3 张图的参考掩膜重算，与本地 `results/pivot/e4_gt_maplesdr.csv` 逐列比对——**101 个数值列最大相对差 5.5e-15**，仅 `runtime_skan_s` / `runtime_pvbm_s` 两个计时列不同。单核每图 7–11 s（本地 Windows 15–17 s）。
   **脚本同步指纹核验**：节点上 `src/pivot/e3_external.py` = `af65105e…`、`src/data/external.py` = `6e96340d…`、`data/external/messidor2/overlap_maplesdr.csv` = `31ef72bf…`，与 13:16 / 12:10 两条锁定记录逐位一致。
-- 2026-09-17 17:45 **E4 MAPLES-DR 生物标志物单元整体移交 CPU 节点（与 E4 agent 双向确认）**：CPU 节点承接 **24 个零样本预测目录**（`runs/pivot/e4/maples/e4mp_{fives,hrf}_s{0,1,2}_{baseline,continued,reliseg,cfloss}/bio.csv`）与两个 MAPLES 锚（`--maples` / `--preannot`）；E4 agent 已把本地 watcher 改为 `bio --procs 6`（新文件 `bio_watch3.bat`，pid 38868，旧 v1/v2 停用——**不要原地编辑正在被 cmd.exe 执行的 .bat**，cmd 按字节偏移重读会静默中断），经验证 `bio_units(include_maples=False)` 返回 20 个 `fundusavseg` 单元、日志由 "44 not ready" 变为 "20 not ready"。两个锚文件（`e4_gt_maplesdr.csv` 13:46、`e4_gt_maplesdr_preannot.csv` 15:35）**已在本地算完，双方均不重算、不覆盖**。分界线：CPU 节点只写这 24 个目录里的 `bio.csv`，其余一概不碰；`cmd_maples_analyse` / `cmd_finish` 读的正是这些路径，收尾器无需改动。
+- 2026-09-17 17:45 **E4 MAPLES-DR 生物标志物单元整体移交 CPU 节点（与 E4 作业 双向确认）**：CPU 节点承接 **24 个零样本预测目录**（`runs/pivot/e4/maples/e4mp_{fives,hrf}_s{0,1,2}_{baseline,continued,reliseg,cfloss}/bio.csv`）与两个 MAPLES 锚（`--maples` / `--preannot`）；E4 作业 已把本地 watcher 改为 `bio --procs 6`（新文件 `bio_watch3.bat`，pid 38868，旧 v1/v2 停用——**不要原地编辑正在被 cmd.exe 执行的 .bat**，cmd 按字节偏移重读会静默中断），经验证 `bio_units(include_maples=False)` 返回 20 个 `fundusavseg` 单元、日志由 "44 not ready" 变为 "20 not ready"。两个锚文件（`e4_gt_maplesdr.csv` 13:46、`e4_gt_maplesdr_preannot.csv` 15:35）**已在本地算完，双方均不重算、不覆盖**。分界线：CPU 节点只写这 24 个目录里的 `bio.csv`，其余一概不碰；`cmd_maples_analyse` / `cmd_finish` 读的正是这些路径，收尾器无需改动。
   **只传 `manifest.csv` + `mask/`，不传 `prob/`**：`prob/` 是 float16 `.npy`（约 6.6 MB/图，24 个目录合计约 25 GB），生物标志物步骤一行都不读。
   **`manifest.csv` 携带 Windows 绝对路径**（`image_path`/`mask_path`/`fov_path`/`label_path`），在 Linux 上不可解析，而 `p5_eval.cmd_bio` 把 `manifest.mask_path` 直接交给读取器。节点上由 `remote/cpu_fix_manifest.py` 重定根，并在任何一个 `mask_path` 仍不存在时**报错退出**，杜绝"路径失配后静默回退到错误记录"。
   **FOV 掩膜是复制过去的，绝不在节点上重新生成**（density / total_length 按 FOV 面积归一，重生成的 FOV 会系统性偏移且不会报错）；MAPLES-DR 自身不带图像，`_maplesdr_image_index()` 回落到 Messidor-2 镜像，故只同步 `messidor2_match.csv` 中 `matched==True` 的那 **162 张**（347 MB，而非镜像全量 4.8 GB）。节点上 `load_dataset("maplesdr")` 返回 162 条、缺图 0、缺 FOV 0。
@@ -356,11 +356,11 @@
   375 GB 内存，`/path/to/workdir` 为 /dev/md0 50 GB（工作根 `/path/to/workdir/medical1`，与本地同构；`/` 仅 30 GB overlay）。
   **口令只用了一次**（`exp/remote/bootstrap_key_gpu2.py`，经 `REMOTE_SECRET` 环境变量装公钥），此后全部密钥登录；
   口令不写入任何文件、脚本、日志或本条目——这是刻意的。环境见 `exp/remote/ENV_gpu2.md`，
-  助手脚本 `exp/remote/gpu2_{sync,pull,e3_driver,fov_prebuild,verify_pulled}.sh`（沿用 CPU 节点 agent 的 `cpu_*.sh` 命名法）。
+  助手脚本 `exp/remote/gpu2_{sync,pull,e3_driver,fov_prebuild,verify_pulled}.sh`（沿用 CPU 节点 的 `cpu_*.sh` 命名法）。
   env：`/root/miniconda3` 的 python3.12 建 venv，torch **2.6.0+cu124** / torchvision 0.21.0+cu124，numpy 2.2.6、
   scipy 1.17.1、skimage 0.26.0、sklearn 1.9.0、cv2 5.0.0、pandas 3.0.5、skan 0.13.1、numba 0.67.0、pyarrow 25.0.1，
   25 个包同进程导入通过，`cuda_avail True`、`device_count 2`、两张卡各跑了一次 2048² matmul。
-  **装环境的顺序坑（写给后续 agent）**：先装 freeze 再装 torch 会被 `pvbm 3.0.1.0` 的**无版本上限的 torchvision 依赖**
+  **装环境的顺序坑（写给后续操作）**：先装 freeze 再装 torch 会被 `pvbm 3.0.1.0` 的**无版本上限的 torchvision 依赖**
   拖进 torch 2.14.0（554 MB）；已改为「torch 先装 + 其余用 `-c` 约束文件锁住 torch/torchvision」，见 `install_env2.sh`。
   同步（仅 ODIR 所需，Messidor-2/APTOS 留在 LAN 节点，不上传）：`src/` 131 文件、`configs/`、`runs/pip_freeze.txt`、
   `results/gateA_biomarker_scales_train.csv`、`data/external/odir5k` 6,407 文件 771 MB、14 个检查点 + config/summary json 约 435 MB。
@@ -372,15 +372,15 @@
   16:28 条把 ODIR-5K 上的 12 个 FIVES 作业排给 LAN 节点（接在其 APTOS 之后），HRF s0 的两个仍留本地队列。
   现统一改判：**ODIR-5K 整集由新 GPU 节点承担**，理由是它有两张空闲的 11 GB 卡和 96 核，而 LAN 节点的 APTOS 尚未跑完。
   **启动前的两项确认（先确认后启动，不是先跑后通知）**：
-  (1) LAN agent 回报已杀掉链式进程（pid 219804，`lan2_e3_chain.sh 9 remote/lan2_jobs_odir5k.txt`），
+  (1) LAN 节点 回报已杀掉链式进程（pid 219804，`lan2_e3_chain.sh 9 remote/lan2_jobs_odir5k.txt`），
       并把作业表改名为 `lan2_jobs_odir5k.txt.DISARMED_moved_to_2080ti`；节点上 `results/pivot/e3/odir5k/` 不存在，
       **没有任何 ODIR 作业曾经启动**，因此无需去重，14 个全部从零跑。其 APTOS 波次不受影响，照常运行。
-  (2) E2 队列 agent 回报已在 17:18 为 `e3:odir5k:hrf:s0:{baseline,reliseg}` 预置隔离锁（`owner.json` 无 pid，
+  (2) E2 队列 回报已在 17:18 为 `e3:odir5k:hrf:s0:{baseline,reliseg}` 预置隔离锁（`owner.json` 无 pid，
       标注归属 GPU2 节点），与 12:05 / 16:28 同一机制；本地 e3 队列**可认领作业归零**，
       本地 `results/pivot/e3/odir5k/` 亦为空目录。
-  **另记一处重复风险**（E2 agent 报、已转告 LAN agent）：本地仍在跑 `messidor2/e3_hrf_s0_baseline`（pid 48140）与
+  **另记一处重复风险**（E2 运行 报、已转告 LAN 节点）：本地仍在跑 `messidor2/e3_hrf_s0_baseline`（pid 48140）与
   `aptos2019/e3_hrf_s0_baseline`（pid 49448），而最新分工把 Messidor-2/APTOS 的 HRF s0 给了 LAN 节点——
-  这两个 tag 有被算两遍的风险，LAN 节点开跑前应先与 E2 agent 核对 meta.json。
+  这两个 tag 有被算两遍的风险，LAN 节点开跑前应先与 E2 运行 核对 meta.json。
 
 - 2026-09-17 18:15 **ODIR-5K E3 吞吐实测与 ETA：14 路并发 1.6–1.7 s/img，整批约 3 小时**。
   分工：GPU0 跑 `e3_fives_s{0,1,2}_{baseline,reliseg}` + `e3_hrf_s0_baseline`（7 个），
@@ -408,7 +408,7 @@
   `e3_hrf_s0_baseline/bio.csv`（18:18 时 aptos 750 行、messidor2 1,240 行，仍在增长）。
   `lan2_pull.sh` 只写节点上存在的标签目录，故这些本地产物**一个都没有被覆盖**
   （已用 `comm -13` 逐文件核对）。这正是 17:21 把 LAN 侧半截 baseline 移出结果树的用意。
-- 2026-09-17 18:20 **完整性负结果（并发分片安全性的实测证据）**：E2 队列 agent 报告本地
+- 2026-09-17 18:20 **完整性负结果（并发分片安全性的实测证据）**：E2 队列 报告本地
   `ensure_fov` 存在**非原子写竞态**（同一数据集两个进程同时生成同一个缺失 FOV，读到截断
   PNG，imageio 回退到 SPE 插件后 `ValueError: cannot reshape array of size 1701`）。
   LAN 节点**不受影响**，因为每个数据集的 FOV 缓存都在波次扇出**之前**单进程预建完毕
@@ -418,11 +418,11 @@
   (2) 所有 driver 日志中每个作业 `rc=0`，唯二非零是 17:21 主动 kill 的两个 `rc=143`；
   (3) 已完成表格共 56,416 行，行数全额、`image_id` 全唯一、4 个 skan 列 **0 个 NaN**。
   截断 FOV 必然表现为崩溃或 NaN/垃圾行，三者皆无 ⇒ 这是真阴性而非"没看见"。
-  **不修补 `ensure_fov`**：它位于 `src/data/external.py`，处于协调者的指纹锁之下
-  （`6e96340d…`，两机已核验一致），静默修改会使预注册指纹失效；已请 E2 agent 上报协调者，
+  **不修补 `ensure_fov`**：它位于 `src/data/external.py`，处于负责人的指纹锁之下
+  （`6e96340d…`，两机已核验一致），静默修改会使预注册指纹失效；已请 E2 运行 上报负责人，
   由其决定是否重新签发锁定哈希。在此之前，"并发前先单进程预建 FOV 并核对数量"是既定规避方案，
-  由 E2 agent 写入 `data/EXTERNAL_DATASETS.md`（文档文件，不在锁内）。
-- 2026-09-17 18:24 **`aptos2019/e3_hrf_s0_baseline` 改由 LAN 节点从零重跑（协调者再分配）**：本地这一趟是本机的长尾（ETA 23:15），挤占 E4 复现 agent 的 GPU，而 LAN 侧有余量。处置：先用 Win32_Process 核对 pid 49448 的命令行（`e3_external bio --dataset aptos2019 --ckpt runs\seg\hrf\seed0\best.pt --tag e3_hrf_s0_baseline --resize-longest 1536 --resolution-record --device cuda:1`）确认无误后按显式 PID 停止，当时进度 **770/3,662**；worker 44688 记为 `FAILED ... rc=4294967295` 并按设计 `release()` 了锁（**未自动重试**）。
+  由 E2 运行 写入 `data/EXTERNAL_DATASETS.md`（文档文件，不在锁内）。
+- 2026-09-17 18:24 **`aptos2019/e3_hrf_s0_baseline` 改由 LAN 节点从零重跑（负责人再分配）**：本地这一趟是本机的长尾（ETA 23:15），挤占 E4 复现作业 的 GPU，而 LAN 侧有余量。处置：先用 Win32_Process 核对 pid 49448 的命令行（`e3_external bio --dataset aptos2019 --ckpt runs\seg\hrf\seed0\best.pt --tag e3_hrf_s0_baseline --resize-longest 1536 --resolution-record --device cuda:1`）确认无误后按显式 PID 停止，当时进度 **770/3,662**；worker 44688 记为 `FAILED ... rc=4294967295` 并按设计 `release()` 了锁（**未自动重试**）。
   半成品移出规范路径：`results/pivot/e3/aptos2019/e3_hrf_s0_baseline` → `e3_hrf_s0_baseline_LOCALpartial_stopped_1824`（770 行、无 meta.json），**保留不删**，与 LAN 的 `_LANpartial_held_1721` 同一约定；随后以 LAN 归属重新加隔离锁（owner.json 无 pid），并核验规范路径已空、本地 e3 可认领作业为 **0**。
   **要求 LAN 从零跑、不要接着这 770 行续写**：bio 阶段按 image_id 续跑，若这份半成品被拉回规范路径，LAN 的运行会静默跳过这些图，产出一张"一半在本机测、一半在 LAN 测"的表。同一检查点下数值应当一致，但溯源必须干净：一个 tag、一台机器、一趟跑完。那 770 行可另作跨节点一致性抽查，不作为交付输入。
   HRF s0 四个 tag 的最终归属：`messidor2/baseline` 本地（pid 48140，ETA ~18:55）；`messidor2/reliseg`、`aptos2019/baseline`、`aptos2019/reliseg` 均归 LAN；`idrid` 两趟本地已完成（各 516 行 + meta.json）；ODIR-5K 全部归 GPU2 节点。
@@ -439,8 +439,8 @@
   **口径说明（记录以免日后误读）**：`run_clf` 的 `delta_vs_ref` 永远以 `tags[0]` 为参照，故规范路径 `results/pivot/e3/<cohort>/delta.csv` 里 12 个 tag 的 Δ 全部相对 `e3_fives_s0_baseline` 一个参照，**跨种子不配对**；上表的逐种子配对数字来自 `e3_perseed/` 下的六次 4-tag 运行。引用时不要把规范 delta.csv 的跨种子行当作配对对比。
 
 - 2026-09-17 18:31 **HRF s0 四个标签的归属落定；`aptos2019/e3_hrf_s0_baseline` 改由 LAN 从零重跑**：
-  协调者 18:24 改派——本地那趟 APTOS baseline（pid 49448，已到 770/3,662、ETA 23:15）是本地长杆，
-  且在饿死 E4 复现 agent 的 GPU；LAN 有余量故接手。E2 agent 停掉该 PID 并把半截结果移出规范路径
+  负责人 18:24 改派——本地那趟 APTOS baseline（pid 49448，已到 770/3,662、ETA 23:15）是本地长杆，
+  且在饿死 E4 复现作业 的 GPU；LAN 有余量故接手。E2 运行 停掉该 PID 并把半截结果移出规范路径
   （`e3_hrf_s0_baseline_LOCALpartial_stopped_1824`，770 行、无 meta.json，保留不删），
   规范路径核验为空后，LAN 于 **18:31:25 从零启动**（我方 17:20 的 10 行残留早已移至
   `runs/lan_e3/_held/`，不在结果树内）。检查点 `runs/seg/hrf/seed0/best.pt`
@@ -453,7 +453,7 @@
   （**18:22:08 完成，1,744/1,744，`1325429e2850…` 与本地 last.pt 一致，已回拉 3/3 文件**）；
   `aptos2019/baseline` LAN（新起）；`aptos2019/reliseg` LAN（在跑）。IDRiD 的 HRF s0 两趟归本地
   （各 516 行已完成），ODIR-5K 全部归 2080 Ti 机器。
-- 2026-09-17 18:30 **E4 婉拒 LAN 空闲机时（记录理由，避免日后重提）**：按协调者指示向 E4 agent
+- 2026-09-17 18:30 **E4 婉拒 LAN 空闲机时（记录理由，避免日后重提）**：按统一安排向 E4 作业
   提供 ~20:15 之后的 3080 通道，对方**明确拒绝且理由成立**：(1) E4 关键路径是剩余 5 个微调，
   配方锁死在 1536/768 **batch 4**，10 GB 卡必须减半到 bs 2 → 对预注册设计构成协议偏离，
   且这些微调在 20:00 前就结束，早于卡空出；(2) 唯一可外包的 MAPLES 零样本推理已由 32 核 EPYC
@@ -467,22 +467,22 @@
 - 2026-09-17 18:32 **E3 首张跨节点交付表已本地独立核验通过：`messidor2/e3_hrf_s0_reliseg`**（LAN 节点 18:22:08 完成并回拉）。**不是采信对方的自述，而是在本地重算**：1,744 行 / 1,744 个唯一 image_id（与 meta 的 n_images 一致，且等于排除 MAPLES-DR 重叠前的 Messidor-2 全量——排除只在 clf 阶段生效，bio 表保留全部行，与 13:15 条一致）；`resize_longest=1536, patch=768, threshold=0.5` 与其余 34 张表同一约定；meta 的 `ckpt_sha256 = 1325429e28507c11a2fd9680fe6536aa7284be60d9e6a32a374e56ff83c28906`，本地对 `runs/pivot/hrf/seed0/reliseg/last.pt` 重新计算得到同一哈希，逐位相符；四个 skan 生物标志物列**无空值、无 NaN**（0/1,744 行）。
 - 2026-09-17 18:31 **`aptos2019/e3_hrf_s0_baseline` 已在 LAN 节点从零开跑**（18:31:25），检查点 `runs/seg/hrf/seed0/best.pt` 的 sha256 `fd24517bb24a7489935ce77d8c14a00673afcaa6fa9c69f6c1e16921b5a2b771` 在两台机器上重算一致；APTOS 的 FOV 缓存已于 13:39:22 单进程预建完毕，故 `ensure_fov` 竞态不适用。预计 20:45–21:20 完成（4 worker，优于本地单进程的 23:15）。
   **`results/pivot/e3/aptos2019/e3_hrf_s0_baseline_LOCALpartial_stopped_1824`（770 行）继续保留、任何人不要清理**：LAN 表完成后将按 image_id 内连接该半成品，报告四个 skan 列的最大相对偏差，作为**跨节点一致性抽查**。同一冻结检查点、同一约定，预期浮点级一致；若不一致，这是必须在 clf 阶段之前知道的发现。该检查是副产品，不作为交付输入。
-  **值得写下的一点**（LAN agent 的复述，与我的判断一致）：续跑集合以 image_id 为键，**不记录每一行由哪台机器产生**，因此一份混合来源的表事后无法分辨——这正是"一个 tag、一台机器、一趟跑完"的理由。
+  **值得写下的一点**（LAN 节点 的复述，与我的判断一致）：续跑集合以 image_id 为键，**不记录每一行由哪台机器产生**，因此一份混合来源的表事后无法分辨——这正是"一个 tag、一台机器、一趟跑完"的理由。
 
-- 2026-09-17 18:35 **FOV 缓存完整性实测通过（此前只是"按顺序推断没出问题"，现在是核验过的）**：LAN 节点 agent 指出 `ensure_fov` 非原子写入，两个进程同时补同一张缺失掩膜会产出被截断的 PNG。E4 的四条 GPU 通道确实可能在首次 `load_dataset` 时并发触发 `_fov_for`。逐图核验结果：`fundusavseg` 100/100、`maplesdr` 162/162，全部存在、可读、且与对应图像尺寸一致；FOV 占帧比 fundusavseg 0.642 / 0.779 / 0.787（min/中位/max）、maplesdr 0.447 / 0.464 / 0.472，与 13:00 条记录的 0.642–0.785 与 0.448–0.472 吻合。**无截断、无竞争损坏**。原因是两个缓存都在通道启动前由单进程建好（`check_data.py` 13:00、strata 扫描 ~14:00），属顺序上的运气而非设计；**后续若中途新增数据集，必须先单进程预建 FOV 再开并发**。
-- 2026-09-17 18:35 **通用运维规则（今日三次同类故障后确立）**：**绝不修改正在被活动进程读取的文件，包括该进程本身正在执行的脚本。** 今日三例：(1) 我就地编辑运行中的 `bio_watch.bat`，cmd.exe 按字节偏移重读批处理，偏移错位后循环静默终止，生物标志物停摆 41 min；(2) LAN agent 就地编辑运行中的 `lan2_sync.sh`，bash 在循环结束后 seek 到位移后的偏移读到乱码（`line 64: it: command not found`），8 GB APTOS 传输中断且 0/3,726 文件落地；(3) 同类风险还包括并发进程互相覆写非原子生成的缓存文件（见上条 FOV）。做法：改脚本时写新文件名重启（本项目为 `bio_watch<N>.bat`），或复制到第二路径运行副本。
-- 2026-09-17 18:35 **跨机数值一致性的检验范式（与 CPU/LAN 两个 agent 共识）**：分布式跑同一估计量时，不靠"用了同一份代码"的声明，而是**对同一批输入在两台机器上各算一遍、逐列报告最大相对差**。CPU 节点对 MAPLES GT 锚点做此检验：101 个数值列最大相对差 **5.5e-15**，仅 `runtime_*_s` 列不同。关键理由：FOV 重生成这类错误**不会抛异常**——density 与 total_length 都以 FOV 面积归一化，换一份"有效但不同"的掩膜只会让数字系统性偏移且看起来正常，与竞争写入产生的截断 PNG（会崩、会自曝）是不同性质的故障。
+- 2026-09-17 18:35 **FOV 缓存完整性实测通过（此前只是"按顺序推断没出问题"，现在是核验过的）**：LAN 节点 指出 `ensure_fov` 非原子写入，两个进程同时补同一张缺失掩膜会产出被截断的 PNG。E4 的四条 GPU 通道确实可能在首次 `load_dataset` 时并发触发 `_fov_for`。逐图核验结果：`fundusavseg` 100/100、`maplesdr` 162/162，全部存在、可读、且与对应图像尺寸一致；FOV 占帧比 fundusavseg 0.642 / 0.779 / 0.787（min/中位/max）、maplesdr 0.447 / 0.464 / 0.472，与 13:00 条记录的 0.642–0.785 与 0.448–0.472 吻合。**无截断、无竞争损坏**。原因是两个缓存都在通道启动前由单进程建好（`check_data.py` 13:00、strata 扫描 ~14:00），属顺序上的运气而非设计；**后续若中途新增数据集，必须先单进程预建 FOV 再开并发**。
+- 2026-09-17 18:35 **通用运维规则（今日三次同类故障后确立）**：**绝不修改正在被活动进程读取的文件，包括该进程本身正在执行的脚本。** 今日三例：(1) 我就地编辑运行中的 `bio_watch.bat`，cmd.exe 按字节偏移重读批处理，偏移错位后循环静默终止，生物标志物停摆 41 min；(2) LAN 节点 就地编辑运行中的 `lan2_sync.sh`，bash 在循环结束后 seek 到位移后的偏移读到乱码（`line 64: it: command not found`），8 GB APTOS 传输中断且 0/3,726 文件落地；(3) 同类风险还包括并发进程互相覆写非原子生成的缓存文件（见上条 FOV）。做法：改脚本时写新文件名重启（本项目为 `bio_watch<N>.bat`），或复制到第二路径运行副本。
+- 2026-09-17 18:35 **跨机数值一致性的检验范式（与 CPU/LAN 两个节点 共识）**：分布式跑同一估计量时，不靠"用了同一份代码"的声明，而是**对同一批输入在两台机器上各算一遍、逐列报告最大相对差**。CPU 节点对 MAPLES GT 锚点做此检验：101 个数值列最大相对差 **5.5e-15**，仅 `runtime_*_s` 列不同。关键理由：FOV 重生成这类错误**不会抛异常**——density 与 total_length 都以 FOV 面积归一化，换一份"有效但不同"的掩膜只会让数字系统性偏移且看起来正常，与竞争写入产生的截断 PNG（会崩、会自曝）是不同性质的故障。
 - 2026-09-17 18:45 **E3 复现队列分类结果（CPU 节点，预注册默认值未改）**：IDRiD（n=516）与 Messidor-2（n=1,582，剔除 162）主终点 referable-DR logistic AUROC 的 ΔAUC（ReliSeg − baseline / − continued）12 个逐种子 CI 全含零；四臂间差异小于同一臂三种子间差异。APTOS 主队列待 continued s0/s1 到齐后自动运行。结合零样本结果：C2 的效用主张目前无任何队列支持；最终定性等 E2 域内 continued 对比（HRF）与 E4。
 - 2026-09-17 18:43 **E2 完整网格结论（results/pivot/E2_REPORT.md，final analysis 18:39）**：(1) HRF（开发集）三种子合并：ReliSeg − continued 的 FD +0.034 [−0.037, +0.107]、length +0.015 [−0.040, +0.074]，均含零；P5 探针的正结果只出现在 seed 0（+0.14），seeds 1–2 为 −0.006/−0.020 → 种子异质，且 continued seed 0 本身 +0.07。(2) 忠实 CF-Loss 相对 continued 在 HRF 上显著**降低**保真度：FD −0.156 [−0.222, −0.092]、length −0.148 [−0.208, −0.090]、density −0.037 [−0.074, −0.002]，并突破 clDice 边际——对已发表方法的可复现阴性证据。(3) FIVES 天花板零结果；零样本相对 continued 零结果；E3 复现队列零结果。(4) HRF seed-0 消融中 no-density / length-only 出现 +0.15–0.20 的 FD/length 增益，但伴随迂曲度偏差 +1.5–8.5σ 的严重附带损害，且仅单种子，不作为新臂推进。**定性：C2（测量感知微调）为有界阴性结论；安全约束分析与 CF-Loss 复现保留。**
 - 2026-09-17 18:45 **新探针预注册（推理操作尺度）**：审计与分辨率阶梯表明保真度随分辨率下降；当前所有推理把 HRF（原生 3504）与 FIVES（原生 2048）降采样到最长边 1536。探针：在 HRF 测试集上用已冻结的 baseline 与 continued（3 种子）以最长边 2048 / 2560 / 3504 推理（patch 768，其余不变），计算 FD/length/density/tortuosity 对 GT 的 r 与 Dice/clDice。判定规则（看 HRF 结果前锁定）：若 FD 与 length 的 Δr（原生 − 1536）三种子均 ≥ +0.10 且 CI 排除零，则将"原生尺度推理"作为 C2 的候选干预，预注册确证：FIVES 原生 2048（三种子）、零样本 CHASE/STARE 原生、E4 折外原生、E3 外部集原生（重跑受影响标签）；主终点 Δr（原生 − 1536）配对 bootstrap，安全终点同前，下游 ΔAUC 次要。若不满足，探针结果仅作为审计的补充报告。
-- 2026-09-17 19:05 **`messidor2/e3_hrf_s0_baseline` 本地跑完并核验通过**：1,744 行 / 1,744 个唯一 image_id，与 meta 的 n_images 一致；`resize_longest=1536, patch=768, threshold=0.5`；meta 的 `ckpt_sha256 = fd24517bb24a7489935ce77d8c14a00673afcaa6fa9c69f6c1e16921b5a2b771`，本地对 `runs/seg/hrf/seed0/best.pt` 重算得到同一哈希（**与 LAN agent 在其节点上独立算出的值也相同**，三方一致）；四个 skan 列 0 空值 / 0 NaN。行数为 Messidor-2 全量（含 162 张 MAPLES-DR 重叠图），符合"排除只在 clf 阶段生效"的 13:15 决定。
+- 2026-09-17 19:05 **`messidor2/e3_hrf_s0_baseline` 本地跑完并核验通过**：1,744 行 / 1,744 个唯一 image_id，与 meta 的 n_images 一致；`resize_longest=1536, patch=768, threshold=0.5`；meta 的 `ckpt_sha256 = fd24517bb24a7489935ce77d8c14a00673afcaa6fa9c69f6c1e16921b5a2b771`，本地对 `runs/seg/hrf/seed0/best.pt` 重算得到同一哈希（**与 LAN 节点 在其节点上独立算出的值也相同**，三方一致）；四个 skan 列 0 空值 / 0 NaN。行数为 Messidor-2 全量（含 162 张 MAPLES-DR 重叠图），符合"排除只在 clf 阶段生效"的 13:15 决定。
 - 2026-09-17 19:06 **本地退出 E3，两个 E2 worker 已停止，本地 GPU 全部交给 E4**：停止前逐一核对——`Get-CimInstance` 确认 pid 44224 / 44688 的命令行均为 `python -m src.pivot.e2_run gpu --gpu {0,1}`、除 conhost 外**无子进程**（即无在跑作业），且两者日志末行均为 `[e2] nothing runnable; waiting 120 s for the other lane`（本地 e3 队列可认领作业为 0，故其空转属预期）。按显式 PID 停止后复查：**无任何 `e2_run` 进程残留**。
   本地 E3 最终交付：`idrid/e3_hrf_s0_{baseline,reliseg}`（各 516 行）与 `messidor2/e3_hrf_s0_baseline`（1,744 行），共 3 张表，均已本地核验。其余 E3 由 LAN 节点（messidor2/aptos2019 的 reliseg + aptos2019 的 baseline）与 GPU2 节点（全部 14 个 ODIR-5K 检查点）承担。
 - 2026-09-17 18:50 **E2 全网格分析完成（`exit=0` 18:39:43）**，产物：`E2_REPORT.md`（119 KB）、`e2_fidelity.csv` 576 行、`e2_delta.csv` 1,184 行、`e2_pixel.csv` 72 行、`e2_downstream.csv` 224 行、`e2_zeroshot.csv` 480 行、`e2_safety.csv` 1,316 行。主要判读见 18:55 条（C2 记为有界阴性）。三个值得单独记下的点：
   (1) **`continued` 对照推翻了四个"看似显著"的结果**：FIVES 上 ReliSeg 的 FD Δr 对 baseline 为 +0.0047、对 continued 变为 **−0.0034（变号）**，density 同样变号；零样本 CHASE/STARE 上对 baseline 的 total_length Δr 两个 CI 都不跨零（+0.0076 [+0.0006,+0.0372]、+0.0051 [+0.0004,+0.0144]），对 continued 则**全部跨零**。若无同预算对照，这四条会被当作阳性报告。
   (2) **已发表 CF-Loss 在 FIVES seed0 上显著损害下游 AUC**：ΔAUC = −0.0179 [−0.0397, −0.0002]，CI 不跨零。
   (3) **HRF 消融显示 density 项适得其反**（seed0，仅开发集，假设生成性质）：去掉 density（`abl_no_density`）得到 FD Δr **+0.1981**、total_length **+0.1989**，约为完整 ReliSeg（+0.0389 / +0.0190）的 5 倍；`abl_length_only`（+0.1631 [+0.0887,+0.2383] / +0.1509 [+0.0799,+0.2223]）与 `abl_fd_only`（+0.0949 [+0.0287,+0.1705] / +0.0891 [+0.0207,+0.1633]）是**仅有的 CI 不跨零的臂**，且都优于完整损失；而 density 自身的 Δr 在几乎所有臂中为负（含 `abl_density_only` 的 −0.0229），即该项连它所约束的量都没有改善。
-- 2026-09-17 19:11 **E2/E3 结果写入稿件，C2 改写为有界阴性（协调者指示）**：(1) 骨架表全部撤销，改为从 CSV 生成：`paper2/tools/mk_tab_e2.py` → `tab:e2`（FIVES/HRF 域内主表）、`tab:e2zs`（零样本，补充 S2）、`tab:e2abl`（HRF seed-0 消融，补充 S2），读 `e2_delta.csv` / `e2_safety.csv` / `e2_pixel.csv` / `e2_downstream.csv` / `e2_zeroshot_delta_pooled.csv`；`mk_tab_e3.py` → `tab:e3`，读 `e3/<cohort>/summary.csv` 与 `e3_perseed/ref<arm>_s<k>/<cohort>/delta.csv`，APTOS 行由生成器自己输出 `\todo{}`；`fig_e2_forest.py` → 图 5（左：三个目标标志物的配对 Δr，对 baseline 与对 continued 两种参考；右：迂曲度偏差在两条管线上，画出 ±0.25σ 边际）；`fig_e3_external.py` → 图 6（逐种子 ΔAUROC）。`mk_tab_placeholders.py` 与 `fig_placeholders.py` 现在只剩 E4。`\todo` 由 66 降到 21。(2) **C2 在摘要 / 引言 1.3 / 5.10 / 讨论 / 结论中一律改写为有界阴性**："测量感知微调在五个队列（FIVES 确证、HRF 开发、CHASE_DB1+STARE 零样本、IDRiD+Messidor-2 外部）上均未使图像级保真度超过同预算训练，目标标志物的全部 CI 含零；相对冻结基线的表观增益对同预算对照消失"，并明确该结论以 E4 为条件。两项实质发现被提到 C2 的核心位置：忠实复现的已发表 CF-Loss 相对同预算对照**降低**保真度（FD −0.156 [−0.222,−0.092]、length −0.148、density −0.037，CI 均排除零）并在三个种子上突破 clDice 边际；预注册安全终点抓到未约束迂曲度的大幅位移（FIVES +1.16σ、HRF +6.61σ，HRF 迂曲度 Δr −0.244 [−0.375,−0.103]）。(3) 按指示如实写入：FIVES 为天花板（基线 r 0.98/0.98/0.90，三种子一致，且无下游差可恢复）；HRF 探针效应仅 seed 0（+0.143 vs seeds 1–2 的 −0.006/−0.020），且 continued 自身 seed 0 即 +0.073；零样本相对基线的 total_length 增益（CHASE +0.008、STARE +0.005）对 continued 消失，HRF 训练模型迁移更差（STARE −0.034 [−0.076,−0.004]）；消融仅作单种子开发证据，**不推进任何变体**，并把 no-density / length-only 的迂曲度偏差（skan/PVBM +2.37/+11.15σ 与 +0.57/+1.49σ）与其增益并列报告。(4) 5.9 节机制表现在明确标注"早于同预算对照"，讨论直说 C2 未通过、探针是 seed-0 结果，未为了迎合阴性而改写目标函数。(5) NUMBER_SOURCES 增补 5.10/5.11 两节的逐条出处与新的"未能取数"清单；REVIEW_R1_RESPONSE 增 §2c。构建：63 页（正文含参考文献 55 页，补充 8 页），无未定义引用/交叉引用，overfull hbox 8 处且全部 <30pt，剩余 21 个 `\todo`（正文 13 + `tab:e3` 的 APTOS 行 1 + `tab:e4` 骨架 7）。**仍待**：APTOS-2019 主队列分类（E3 主终点）与全部 E4。
+- 2026-09-17 19:11 **E2/E3 结果写入稿件，C2 改写为有界阴性（统一安排）**：(1) 骨架表全部撤销，改为从 CSV 生成：`paper2/tools/mk_tab_e2.py` → `tab:e2`（FIVES/HRF 域内主表）、`tab:e2zs`（零样本，补充 S2）、`tab:e2abl`（HRF seed-0 消融，补充 S2），读 `e2_delta.csv` / `e2_safety.csv` / `e2_pixel.csv` / `e2_downstream.csv` / `e2_zeroshot_delta_pooled.csv`；`mk_tab_e3.py` → `tab:e3`，读 `e3/<cohort>/summary.csv` 与 `e3_perseed/ref<arm>_s<k>/<cohort>/delta.csv`，APTOS 行由生成器自己输出 `\todo{}`；`fig_e2_forest.py` → 图 5（左：三个目标标志物的配对 Δr，对 baseline 与对 continued 两种参考；右：迂曲度偏差在两条管线上，画出 ±0.25σ 边际）；`fig_e3_external.py` → 图 6（逐种子 ΔAUROC）。`mk_tab_placeholders.py` 与 `fig_placeholders.py` 现在只剩 E4。`\todo` 由 66 降到 21。(2) **C2 在摘要 / 引言 1.3 / 5.10 / 讨论 / 结论中一律改写为有界阴性**："测量感知微调在五个队列（FIVES 确证、HRF 开发、CHASE_DB1+STARE 零样本、IDRiD+Messidor-2 外部）上均未使图像级保真度超过同预算训练，目标标志物的全部 CI 含零；相对冻结基线的表观增益对同预算对照消失"，并明确该结论以 E4 为条件。两项实质发现被提到 C2 的核心位置：忠实复现的已发表 CF-Loss 相对同预算对照**降低**保真度（FD −0.156 [−0.222,−0.092]、length −0.148、density −0.037，CI 均排除零）并在三个种子上突破 clDice 边际；预注册安全终点抓到未约束迂曲度的大幅位移（FIVES +1.16σ、HRF +6.61σ，HRF 迂曲度 Δr −0.244 [−0.375,−0.103]）。(3) 按指示如实写入：FIVES 为天花板（基线 r 0.98/0.98/0.90，三种子一致，且无下游差可恢复）；HRF 探针效应仅 seed 0（+0.143 vs seeds 1–2 的 −0.006/−0.020），且 continued 自身 seed 0 即 +0.073；零样本相对基线的 total_length 增益（CHASE +0.008、STARE +0.005）对 continued 消失，HRF 训练模型迁移更差（STARE −0.034 [−0.076,−0.004]）；消融仅作单种子开发证据，**不推进任何变体**，并把 no-density / length-only 的迂曲度偏差（skan/PVBM +2.37/+11.15σ 与 +0.57/+1.49σ）与其增益并列报告。(4) 5.9 节机制表现在明确标注"早于同预算对照"，讨论直说 C2 未通过、探针是 seed-0 结果，未为了迎合阴性而改写目标函数。(5) NUMBER_SOURCES 增补 5.10/5.11 两节的逐条出处与新的"未能取数"清单；REVIEW_R1_RESPONSE 增 §2c。构建：63 页（正文含参考文献 55 页，补充 8 页），无未定义引用/交叉引用，overfull hbox 8 处且全部 <30pt，剩余 21 个 `\todo`（正文 13 + `tab:e3` 的 APTOS 行 1 + `tab:e4` 骨架 7）。**仍待**：APTOS-2019 主队列分类（E3 主终点）与全部 E4。
 
 - 2026-09-17 19:18 **E4 主终点出结果：独立复现集上 ReliSeg 的测量保真度增益为零，且迂曲度安全终点破界（如实报告，不改设计）**。64/64 作业完成、0 失败；折外 n=100，σ 按外折训练部分估计，bootstrap 在折内重采样（以固定折与已拟合模型为条件）。**主对比 ReliSeg − continued（skan）**：FD Δr = −0.0104 [−0.0376, +0.0141]、density −0.0003 [−0.0048, +0.0038]、total_length −0.0006 [−0.0024, +0.0015]；max-statistic（Westfall–Young）调整后 p 分别为 **1.000 / 0.859 / 0.890**，无一显著，亦无一方向相反 → `replication_rule.json` 判定 **replication_success = false**。次要对比 ReliSeg − baseline 同样贴零（FD −0.0020、density −0.0006、total_length −0.0002）。留一折稳健性：五折的 FD Δr 在 −0.005 … −0.022 之间，无单折驱动。按疾病类别调整后 r 几乎不变（如 FD 0.8969 vs 0.8968），说明一致性不是由病种间差异撑起来的。**这是有功效的零结果，不是没打中**：预注册的揭盲前功效曲线（`e4_power.csv`，输入仅 E2）在本集这种保真度水平（baseline r = 0.899 FD / 0.940 density / 0.987 total_length）下对 Δr = 0.05 的功效约 1.00。基线已近天花板，与 FIVES 的零结果同因同果，**E4 因此是对 FIVES 结论的独立确证，而非又一次"数据不够"**。
 - 2026-09-17 19:18 **E4 安全终点：8 项 BREACH，全部集中在迂曲度（与 E2 在 FIVES 上的 collateral damage 同向、同性质，独立复现）**。skan 迂曲度 Δr = **−0.0631 [−0.1366, −0.0296]**（对 continued）与 −0.0644 [−0.1361, −0.0317]（对 baseline），点估计与整个 95% CI 均越过 −0.05 边界；PVBM 迂曲度更严重：Δr = **−0.7746 [−1.0191, −0.5315]**、Δbias = **+1.738σ**（边界 0.25σ）。迂曲度保真度由 baseline 的 r = 0.967 掉到 reliseg 的 **0.903**（skan）。另有 cfloss 的 density Δbias = −0.272σ 轻微越界。像素端非劣性通过：四臂 Dice 0.9362–0.9380、clDice 0.9465–0.9482，两两差值均在 ±0.0017 以内，无一越过 0.01 边界。**结论：ReliSeg 在本复现集上没有买到任何测量保真度，却确实付出了未受约束标志物（迂曲度）的代价。**
@@ -498,7 +498,7 @@
   完全一致；**14 个 `ckpt_sha256` 与本地检查点现算值逐一吻合，0 个不符**。
   LAN 节点 E3 总交付 = IDRiD 12 + Messidor-2 13 + APTOS 14 = **39 张表**。
 - 2026-09-17 20:25 **跨节点一致性抽查：不是逐位一致，原因已定位为 AMP 推理的非确定性，且无系统偏差**：
-  用 E2 agent 留存的 770 行本地半截结果（同一冻结检查点 `fd24517bb24a…`、同一约定）
+  用 E2 运行 留存的 770 行本地半截结果（同一冻结检查点 `fd24517bb24a…`、同一约定）
   与 LAN 完整表在 770 个共同 `image_id` 上做内连接：
   | 列 | max abs rel diff | mean | 逐位相等行 |
   |---|---|---|---|
@@ -518,7 +518,7 @@
   所有 FIVES 对全 LAN）均同机。该噪声（相对 sd ~1e-4）远小于检查点间的真实差异，
   但**论文不得声称逐位可复现**；若要彻底消除，可在 LAN 空闲卡上重跑
   `messidor2/e3_hrf_s0_baseline`（1,744 张，约 30–60 min）使该对同机——
-  **未擅自执行**：协调者已明确该标签归本地且不得写入其目录，此项作为建议上报。
+  **未擅自执行**：负责人已明确该标签归本地且不得写入其目录，此项作为建议上报。
 
 - 2026-09-17 20:26 **E3 bio 阶段（三个主外部集）全部完成，端到端复核通过**：本地树内共
   **42 张表 / 82,908 行**——IDRiD 14 × 516、Messidor-2 14 × 1,744、APTOS-2019 14 × 3,662
@@ -529,10 +529,10 @@
   LAN 节点 GPU 于 20:19 起空闲（19 MiB），工作树 21 GB 留存于
   `/mnt/data/Programming/research_ws/medical1`（/dev/sda1 仍有 1.3 TB 空闲），按用户规则不删。
   ODIR-5K 敏感性集由 2×2080 Ti 机器承担（LAN 一趟未跑）。**clf 阶段未运行**（本地预注册中）。
-  待协调者决定的唯一事项：是否在空闲的 LAN 卡上重跑 `messidor2/e3_hrf_s0_baseline`
+  待负责人决定的唯一事项：是否在空闲的 LAN 卡上重跑 `messidor2/e3_hrf_s0_baseline`
   以消除 E3 中唯一的跨机器配对（见 20:25 条）。
 
-- 2026-09-17 20:27 **可复现性声明的口径（协调者裁定，写入论文）**：跨机器复现**达到 ~1e-4 相对量级，
+- 2026-09-17 20:27 **可复现性声明的口径（决定，写入论文）**：跨机器复现**达到 ~1e-4 相对量级，
   而非逐位一致**；论文按此措辞，不得声称 bit-level reproducibility。实测依据（同一冻结检查点
   `fd24517bb24a…`、同一约定、770 个共同 `image_id`，LAN 节点 vs 本地机器）：
   `FD_skan` max 3.60e-03 / mean 3.1e-05；`tortuosity_skan` 1.68e-03 / 3.0e-05；
@@ -545,7 +545,7 @@
   **零均值、无系统偏差**（符号相对差 |mean|/sd = 0.011–0.043，LAN 高于本地的比例 0.35–0.47）
   ⇒ 只增加噪声，不会使任何对比朝一个方向偏移。若日后需要确定性可设 `amp=False`，
   但那将改动全部 39 张 LAN 表共用的标志，现阶段不做。
-- 2026-09-17 20:24 **`messidor2/e3_hrf_s0_baseline_lanrep` 启动（协调者裁定第 2 条）**：
+- 2026-09-17 20:24 **`messidor2/e3_hrf_s0_baseline_lanrep` 启动（决定第 2 条）**：
   用 HRF s0 baseline 检查点在空闲的 LAN 卡上重跑 Messidor-2，**写入独立标签
   `e3_hrf_s0_baseline_lanrep`，绝不触碰规范标签 `e3_hrf_s0_baseline`（归本地）**。
   一物两用：(a) 为 HRF 对比提供**同机配对**（消除 E3 中唯一的跨机器配对，见 20:25 条），
@@ -558,7 +558,7 @@
   (3) **density 是例外，随尺度单调大幅改善**：baseline r 0.6292 → 0.7462 → 0.7799 → **0.8113**，3504 对 1536 的 Δr **+0.1820 [+0.1314, +0.2326]**，3/3 种子；continued **+0.1300 [+0.0807, +0.1793]**。density 本就是 HRF 上第二好的标志物，也是对拓扑最不敏感的一个——与"尺度改善的是面积类而非拓扑类"的机制一致。
   (4) **代价是实打实的**：3504 上 Dice −0.044、clDice −0.069/−0.072，**18 个非参照运行中 12 个突破 clDice 0.01 非劣边界**；偏差发生**符号翻转**——HRF baseline 原本低估 −1.6 至 −2.2σ，3504 的 Δbias 为 FD **+2.63σ**、total_length **+2.82σ**（continued +2.96 / +3.23σ），即由低估转为高估；算力 2.5–3.4× 每图（1536 0.92 s/图 → 3504 2.76 s/图，baseline）。
   判读：尺度不是 HRF 拓扑类保真度缺口的原因；把推理放大到原生分辨率会**损害** FD/total_length 并大幅破坏拓扑一致性。可辩护的实用建议是 2048 附近的适度上采样，对 FD/长度有小而一致的收益、对 density 有较大收益，代价约 1.1–1.7× 算力，但仍会轻微突破 clDice 边界（−0.006），须如实报告。
-- 2026-09-17 20:30 **跨节点一致性抽查：本地独立复算，确认 LAN agent 的诊断成立**（其 DECISIONS 20:25）。在本地对 `aptos2019/e3_hrf_s0_baseline` 的 LAN 完整表与本地 770 行半成品按 image_id 内连接（770/770 重叠），**逐位重算而非采信对方数字**，结果与其报告完全吻合：最大相对差 FD_skan 3.60e-3、tortuosity 1.68e-3、total_length 2.12e-3、density 2.04e-4。
+- 2026-09-17 20:30 **跨节点一致性抽查：本地独立复算，确认 LAN 节点 的诊断成立**（其 DECISIONS 20:25）。在本地对 `aptos2019/e3_hrf_s0_baseline` 的 LAN 完整表与本地 770 行半成品按 image_id 内连接（770/770 重叠），**逐位重算而非采信对方数字**，结果与其报告完全吻合：最大相对差 FD_skan 3.60e-3、tortuosity 1.68e-3、total_length 2.12e-3、density 2.04e-4。
   **几何链逐位相同**（`feat_fov_area_px` / `native_h,w` / `native_longest` / `scale` / `crop_h,w` 七列全部精确相等，maxabs=0）——图像读取、FOV 生成与裁剪框完全确定性，**FOV 来源被排除**，这正是先前最担心的失效模式。差异起自前向传播：`pred_fg_frac` 最大绝对差 **1.26e-05**（对方文中写 2.0e-4，当为相对量；此处以实测绝对值为准），amp/fp16 与 cuDNN 算法选择在两台机器上略有不同，概率图在 0.5 阈值附近移动，少量边界像素翻转，再经骨架化与盒计数 FD 放大到 1e-3 量级。
   **是噪声不是偏差**：|mean|/sd 为 0.011–0.043，frac(LAN>local) 为 0.351–0.474，零中心散布，无一台机器系统性偏高。
   **量化"是否影响交付"（本地新增的一步）**：Messidor-2 的 HRF s0 配对是全 E3 中**唯一**跨机器的配对对比（baseline 本地 / reliseg LAN）。在该对上，baseline↔reliseg 的真实信号相对差 sd 为 0.0118–0.0722，而跨机噪声 sd 为 3.3e-5–1.85e-4，**噪声/信号 = 0.07%–1.2%**。对配对检验而言，向一臂加入零中心独立噪声只会使差值方差膨胀 √(1+0.0116²) ≈ 1.00007（约 0.007%），即**略偏保守，不可能制造假阳性**。
@@ -566,7 +566,7 @@
   **写作要求**：论文**不得**声称生物标志物表跨机器逐位可复现。可写且可辩护的表述是"同一检查点、同一约定，跨机器一致到约 1e-4 相对量级且无系统性偏移"。`amp=False` 大概能换来确定性，但那会改动全部 39 张 LAN 表共享的标志，现在不做。`e3_hrf_s0_baseline_LOCALpartial_stopped_1824` 继续保留。
 - 2026-09-17 20:40 **E4 独立复现完成（results/pivot/E4_REPORT.md）**：主终点 ReliSeg − continued（折外 n=100，折内 bootstrap，max-statistic 校正）FD −0.010 [−0.038, +0.014]、density −0.000、length −0.001，adj. p ≥ 0.86 → replication_success = FALSE；预注册功效在该保真度水平下对 Δr=0.05 为 0.98–1.00，故为**有功效的零结果**。continued − baseline 的 FD +0.008 [+0.001, +0.019] 为唯一有利方向的显著区间（更多训练略增保真度，测量项抵消）。安全：clDice/Dice 0/10 突破；迂曲度 skan Δr −0.063 [−0.137, −0.030]、PVBM Δbias +1.74σ → 附带损害被独立复现。下游四类 AUC：GT 臂 0.54 与预测臂无差 → 该终点在此集无信息量，不作证据。MAPLES-DR 零样本：较高分辨率层 18/18 单元 Δr(ReliSeg − continued) 为负；预标注锚敏感性方向不变。**C2 定性为经预注册、有功效的阴性结论；论文按此改写。**
 
-- 2026-09-17 20:34 **20:25/20:27 两条的证据修正（E2 agent 独立复算后发现，已核实）**：
+- 2026-09-17 20:34 **20:25/20:27 两条的证据修正（E2 运行 独立复算后发现，已核实）**：
   (1) 我引用的 `pred_fg_frac` 差异 **2.0e-04 是相对值**，对应的**绝对值为 1.256e-05**，
   两者是同一数字的两种归一化，原文未标注口径。
   (2) 更要紧的一点：同一张表内 `pred_fg_frac` 与 `density_skan` **逐位相同
@@ -574,9 +574,9 @@
   故我原先把"`density_skan` 2.04e-04"与"`pred_fg_frac` 2.04e-04"并列为两项佐证是**重复计数**，
   实际只有一项。机制结论不变（掩膜确实有差异，这正是要点），但掩膜层面的差异
   只由一个列度量，两条 DECISIONS 的措辞据此更正。
-  (3) E2 agent 独立复算内连接得到与我完全一致的数字（770/770，FD 3.60e-3、tortuosity 1.68e-3、
+  (3) E2 运行 独立复算内连接得到与我完全一致的数字（770/770，FD 3.60e-3、tortuosity 1.68e-3、
   total_length 2.12e-3、density 2.04e-4；几何 7 列 maxabs=0），结论互证。
-- 2026-09-17 20:34 **噪声对配对检验的影响已定量，且主终点不受影响（E2 agent 提供，采纳）**：
+- 2026-09-17 20:34 **噪声对配对检验的影响已定量，且主终点不受影响（E2 运行 提供，采纳）**：
   在 Messidor-2 的 HRF s0 配对上，baseline→reliseg 的**信号**相对 sd 为
   0.0118(FD)/0.0349(tortuosity)/0.0451(density)/0.0722(total_length)，
   **跨机噪声** sd 为 1.37e-4/9.84e-5/3.32e-5/1.85e-4 ⇒ **噪声/信号 = 0.07%–1.2%**。
@@ -586,12 +586,12 @@
   都出自同一台 LAN 机器，故 ΔAUC(ReliSeg − baseline, FIVES seed 0-2, APTOS 主队列,
   referable DR, logreg on bio+cov) **全程同机配对**；跨机配对只涉及**一个复现队列上的
   一个次要 HRF 对比**。此句应明写，不应留给审稿人自行推导。
-- 2026-09-17 20:45 **更正 20:30 条，并记录 E3 bio 表中的重复列**（由 LAN agent 指出 `pred_fg_frac` 与 `density_skan` 同源，本地复核后发现重复不止两列）。
+- 2026-09-17 20:45 **更正 20:30 条，并记录 E3 bio 表中的重复列**（由 LAN 节点 指出 `pred_fg_frac` 与 `density_skan` 同源，本地复核后发现重复不止两列）。
   **更正**：20:30 条把 `density_skan` 的最大相对差 2.04e-04 与 `pred_fg_frac` 的最大绝对差 1.26e-05 并列为两项证据，这是**重复计数**——两者是同一个量在两种归一化下的同一数字（LAN 侧的 2.0e-4 是相对量，本地的 1.26e-5 是绝对量，指的是同一列）。掩膜层面的分歧由**一列**度量，不是两列互相印证。机制结论不变（掩膜确实不同，这才是要点），但证据强度应按一列计。
   **本地复核（三张表逐位比对）**：`density_skan` == `pred_fg_frac` == `feat_pred_density`，在 aptos LAN 表（3,662 行）、aptos 本地半成品（770 行）、messidor2 本地表（1,744 行）上**最大绝对差恒为 0.000e+00**，即同一个量（掩膜∩FOV 面积 / FOV 面积）以三个名字各存了一份。另发现第二组重复：`feat_prob_mass` == `feat_prob_mean`（两者都是概率图在 FOV 内的均值）。
   **对交付无影响，已逐一确认**：E3 分类阶段的特征集 `SKAN_COLS` 与 `COV_COLS` **均不含** `pred_fg_frac` / `feat_pred_density` / `feat_prob_mass`，故 `bio` 与 `bio+cov` 两个特征集不存在重复计数，预注册的主终点不受影响。（此前已知 `density_pvbm` 与 `density_skan` 亦相同——两条管线读的是同一个前景占比，见 e2_analysis 中 primary8 面板作为敏感性而非主面板的理由。）
   **给后续使用者的警告**：任何直接从 E3 `bio.csv` 列名拼特征集的分析，都可能把密度重复计入最多三次、把概率均值重复计入两次。要用就显式选列，不要按前缀或"全部数值列"自动收集。
-- 2026-09-17 20:46 **Messidor-2 HRF s0 的跨机复制跑（`_lanrep`）：撤回反对意见**。此前建议"不重跑"针对的是重写规范表 `messidor2/e3_hrf_s0_baseline`；协调者实际下达的是写入**独立 tag** `messidor2/e3_hrf_s0_baseline_lanrep` 且明令不得触碰规范 tag，两者不是一回事，故原反对意见不成立。该方案严格增量：规范表分毫不动（LAN 节点上根本不存在该目录，启动前已确认），卡本就空闲不挤占他人，而且把跨机一致性的依据从"770 张机会性重叠"升级为**1,744 张完整队列的配对复制**——论文要引用的 ~1e-4 量级由此建立在完整队列上，同时该队列既有同机配对也有跨机配对，读者可自行比对二者是否一致。20:24:39 启动，预计 21:10 完成。
+- 2026-09-17 20:46 **Messidor-2 HRF s0 的跨机复制跑（`_lanrep`）：撤回反对意见**。此前建议"不重跑"针对的是重写规范表 `messidor2/e3_hrf_s0_baseline`；负责人实际下达的是写入**独立 tag** `messidor2/e3_hrf_s0_baseline_lanrep` 且明令不得触碰规范 tag，两者不是一回事，故原反对意见不成立。该方案严格增量：规范表分毫不动（LAN 节点上根本不存在该目录，启动前已确认），卡本就空闲不挤占他人，而且把跨机一致性的依据从"770 张机会性重叠"升级为**1,744 张完整队列的配对复制**——论文要引用的 ~1e-4 量级由此建立在完整队列上，同时该队列既有同机配对也有跨机配对，读者可自行比对二者是否一致。20:24:39 启动，预计 21:10 完成。
 - 2026-09-17 20:38 **E3 主队列 APTOS-2019 分类阶段完成（三个队列全部收齐）**：本地 12 个 FIVES tag 于 19:44 齐备（各 3,662 行 + meta.json），等待器自动同步并在 CPU 节点起跑，canonical 19:45:29→20:09:10，六次逐种子配对运行 20:09→20:36。**预注册默认值未改一项**（同 17:38 条；唯一额外参数 `--n-jobs`，只作用于 GridSearchCV 并行度）。n=3,662，`cohort_role=primary`，图像级划分与图像级配对自助，APTOS 无预注册排除。产物已拉回 `results/pivot/e3/aptos2019/{summary,delta}.csv` + 96 个 `oof_*.npy`，逐种子在 `results/pivot/e3_perseed/ref{baseline,continued}_s{0,1,2}/aptos2019/`。
   **预注册主终点（referable DR / logreg / bio+cov / macro-AUROC，`is_primary=True`）**：12 个 tag 落在 **0.9053–0.9091**（极差 0.0038）。
   | 对照 | seed0 | seed1 | seed2 | 种子均值 |
@@ -603,11 +603,11 @@
   **三队列汇总**：APTOS（主，n=3,662）、IDRiD（复现，n=516）、Messidor-2（复现，n=1,582，已剔除 162 张 MAPLES-DR 重叠）。**预注册主对比 ReliSeg − baseline 在三个队列上一致为零结果**（9 个逐种子 CI 全含零）；ReliSeg − continued 仅在 APTOS 上显著为负，IDRiD/Messidor-2 上 CI 含零。E3 外部下游终点整体为**阴性**，按预注册如实报告，不做事后筛选、不改设计。
 - 2026-09-17 20:38 **E4 MAPLES-DR 生物标志物 24/24 交付完毕（CPU 节点）**：24 个 `runs/pivot/e4/maples/<tag>/bio.csv` 于 19:46:16 全部落到本地规范路径，交付回路随即自动退出。**逐文件校验（本地复核，非仅信任回路）**：24 个文件，**每个恰好 162 行**；8 个 `PRIMARY_COLS`（FD/tortuosity/density/total_length × skan/pvbm）全部存在且无 NaN；24 个文件的 `image_id` 集合**两两完全一致**。
   **与 GT 锚的相关性抽查（24 个目录全查，不是抽一个）**：`total_length_skan` r=0.949–0.973、`FD_skan` r=0.837–0.916、`density_skan` r=0.637–0.822（FIVES 源 0.805–0.822 系统性高于 HRF 源 0.637–0.744，与零样本域差一致）、`tortuosity_skan` r=0.365–0.890 离散度大——**与门禁 A 早已记录的"迂曲度是弱标志物（两管线 ρ=0.65）"一致，不是本次计算的缺陷**。没有任何一个 tag 在任何一列上是离群的，故不存在 FOV 错配或图像配对错误。
-  全程只写这 24 个 `bio.csv`，未触碰两个 MAPLES 锚，未改动 E4 agent 树中任何其他文件；`cmd_maples_analyse` / `cmd_finish` 读的正是这些路径。
+  全程只写这 24 个 `bio.csv`，未触碰两个 MAPLES 锚，未改动 E4 作业 树中任何其他文件；`cmd_maples_analyse` / `cmd_finish` 读的正是这些路径。
 - 2026-09-17 20:50 **E3 主队列 APTOS-2019 分类结果（CPU 节点，锁定默认值）**：主终点 referable-DR logistic AUROC（bio+cov）12 个标签跨度 0.9053–0.9091；预注册主对比 ReliSeg − baseline 三种子 CI 均含零（均值 −0.0003）；ReliSeg − continued 三种子均显著为负（均值 −0.0014，CI 排除零），但效应量在第三位小数、GBDT 下不显著 → 表述为"可检出、实际可忽略、方向不利"。三队列合计：主对比 9/9 逐种子 CI 含零；E3 外部效用终点整体为阴性。E4 MAPLES 生物标志物 24/24 交付并核验。DECISIONS 尾部因多代理并发追加不再严格按时间排序（各条自带时间戳，不重排）。
 - 2026-09-17 21:34 **推理操作尺度探针结果（results/pivot/e2_scale.csv；判定规则见 18:45 条）**：HRF baseline 三种子，FD/length 在 2048/2560/3504 相对 1536 的 Δr 均未达 +0.10（FD：+0.02/+0.05/−0.02，+0.05/+0.02/−0.06，+0.05/−0.01/−0.06），原生尺度反而略降且常数偏差由 −1.6~−2.2σ 翻转为 +0.6~+0.8σ（训练尺度 1536 的网络在原生尺度下把血管看得更细→过估）；density 的 r 随尺度单调上升（+0.10~+0.18，CI 排除零）但非主终点。**判定：不满足预注册规则，"原生尺度推理"不作为 C2 候选干预**；结果作为审计补充报告：(i) FD/length 的逐图保真度不受推理尺度限制；(ii) 常数偏差是尺度依赖的，跨尺度协调必须匹配操作尺度。至此所有候选干预（测量感知微调、CF-Loss、TTA、事后校准、拓扑修复、推理尺度）在预注册检验下均无保真度增益；论文定稿为：C1 审计 + 神谕臂衰减 + 剂量-反应机制（主），C2 预注册有功效的阴性结论 + 单侧附带损害 + CF-Loss 复现（次）。
 
-- 2026-09-17 21:02 **`messidor2/e3_hrf_s0_baseline_lanrep` 完成并回拉核验（协调者裁定第 2 条执行完毕）**：
+- 2026-09-17 21:02 **`messidor2/e3_hrf_s0_baseline_lanrep` 完成并回拉核验（决定第 2 条执行完毕）**：
   20:24:39 → 21:02:18，**37 分 39 秒**跑完 1,744 张（空闲卡单作业 1.3 s/图），`rc=0`。
   核验：**1,744/1,744 行、`image_id` 全唯一、四个 skan 列 0 个 NaN**、
   `resize_longest=1536 / patch=768 / threshold=0.5 / amp=True`、
@@ -630,7 +630,7 @@
   论文口径据此定稿：**"同一检查点、同一约定，跨机器一致性达 ~1e-4 相对量级、无系统偏移"**，
   n=1,744 配对，**不声称逐位一致**。该队列现同时拥有同机配对（`_lanrep` vs `reliseg`，均 LAN）
   与跨机配对（规范 `baseline` 本地 vs `reliseg` LAN），读者可自行验证两者一致。
-- 2026-09-17 21:05 **重复列别名已在 LAN 表上独立确认（E2 agent 发现，扩展为三重）**：
+- 2026-09-17 21:05 **重复列别名已在 LAN 表上独立确认（E2 运行 发现，扩展为三重）**：
   在 `_lanrep` 表（1,744 行）上实测 `density_skan` == `pred_fg_frac` == `feat_pred_density`
   **三者两两 maxabs = 0.000e+00**，且 `feat_prob_mass` == `feat_prob_mean`（maxabs = 0）。
   连同既知的 `density_pvbm` == `density_skan`，**density 在本项目表中最多有四个列名**。
@@ -647,7 +647,7 @@
   E3 最终盘点：本地树共 **43 张表 / 84,652 行**（三个主队列），43/43 检查点哈希已核验，零问题；LAN 交付 40 张（IDRiD 12、Messidor-2 14、APTOS 14），本地 3 张；ODIR-5K 由 GPU2 节点承担。
 
 - 2026-09-17 21:18 **撤回 21:05 条中的"tortuosity 需留意"提法：那是并列(ties)计数假象，非系统偏移**
-  （E2 agent 指出，我方独立复算确认）。我原以 `frac(LAN>本地)=0.262` 判定 tortuosity 最不对称，
+  （E2 运行 指出，我方独立复算确认）。我原以 `frac(LAN>本地)=0.262` 判定 tortuosity 最不对称，
   但该比例把**逐位相同的行**计入了分母。实测四列的并列数差异极大：
   | 列 | ties | gt | lt | gt/(gt+lt) | 符号检验 p | mean\|rel\| | p99\|rel\| |
   |---|---|---|---|---|---|---|---|
@@ -675,7 +675,7 @@
   **结论**：并列计数本身与"它解释了 0.262"写入记录；由并列率推出的机制叙事**不进论文**——它建立在一个已被弃用的统计量上，且样本量为 4。amp/cuDNN 归因的证据仍然充分（几何链逐位相同、pred_fg_frac 在两个不同样本上复现到两位有效数字、零中心），不需要这一条来支撑。
   论文定稿表述维持 21:15 条不变。
 
-- 2026-09-17 21:28 **撤回 21:18 条附带的"并列率与离散度反序 ⇒ 机制佐证"推论（我方错误，E2 agent 指出，
+- 2026-09-17 21:28 **撤回 21:18 条附带的"并列率与离散度反序 ⇒ 机制佐证"推论（我方错误，E2 运行 指出，
   已自行复算证伪）**。我曾称并列率排序与离散度排序相反、二者是同一机制的两面。**实测三种统计量
   全部为正相关，无一反序**：
   | 列 | 并列率 | mean\|rel\| | p99\|rel\| | max\|rel\| |
@@ -699,7 +699,7 @@
 - 2026-09-17 21:32 **并列率机制论证正式撤回（双方各自独立复算后一致）；并提出一条应写入流程的做法**。本地第三次复算确认：rho(并列率, mean|rel|) = **+0.800**（p=0.200）、rho(并列率, p99|rel|) = **+0.600**（p=0.400）、rho(并列率, max|rel|) = **+0.800**（p=0.200）——**三个统计量上全部为正**，包括原以为支持"相反"的 max，故该论证在任何一个统计量上都不成立，且 n=4 时三者均不显著。秩序（低→高）：并列率 FD < density < total_length < tortuosity；mean|rel| FD < density < tortuosity < total_length；max|rel| density < FD < total_length < tortuosity。
   **错误是如何产生的（比结论更值得记）**：LAN 的"相反"印象来自 FD 在 **770 张样本**上的最大值，而并列率从未在该样本上算过——即把**来自两个不同样本的两个统计量**配成对比，且所倚赖的正是双方在**上一条消息里刚刚共同弃用**的逐列最大值（该值在两个样本间相差一个量级）。换言之，是在撰写"弃用最大值"这条更正的同时又用它构造了新论断。
   **保留**：并列计数与"tortuosity 的 45% 并列率解释了 frac=0.262 假象"——已由双方各自复算两次，正是它使符号检验成为正确的检验。**剔除**：由并列率推出的机制叙事，不进论文。amp/cuDNN 归因仍由三条成立的证据支撑（几何链逐位相同、pred_fg_frac 跨两个不同样本复现到两位有效数字、零中心且附 p 值）；加入一条经不起核验的第四条只会削弱前三条，因为读者查出其排序主张为假后会开始怀疑其余。定稿表述维持 21:15 条。
-  **建议作为常规做法（LAN 提出，本地附议，交协调者裁定）**：论文剩余主张一律**由未产出该数字的一方独立重算后方可采信**。今日两次由此推翻结论而非确认结论——FIVES manifest 词干错配（99/200 张测试图被配到 train 记录）与本条——且本条是复算方抓到了刚刚写下该规则的一方违反了它。这比任何一方声称"我检查过了"都更有说服力。
+  **建议作为常规做法（LAN 提出，本地附议，交决定）**：论文剩余主张一律**由未产出该数字的一方独立重算后方可采信**。今日两次由此推翻结论而非确认结论——FIVES manifest 词干错配（99/200 张测试图被配到 train 记录）与本条——且本条是复算方抓到了刚刚写下该规则的一方违反了它。这比任何一方声称"我检查过了"都更有说服力。
 
 - 2026-09-17 21:50 **ODIR-5K E3 外部推理在 2080 Ti 节点全部完成、已回拉并通过行数与检查点哈希核验（14/14）**。
   两条 driver 分别于 **20:52:22**（GPU0，7 个）与 **20:54:06**（GPU1，7 个）打印 `ALL DONE`，
@@ -755,7 +755,7 @@
   **验证（不是"看起来对"，是逐字节核对）**：① 掩膜已存在时不重写；② `regenerate=True` 重新生成后与原文件**逐字节相同**（messidor2 一张 + idrid 三张，SHA-256 全部一致）；③ 无残留 `.tmp` 文件；④ 仍为合法 PNG（1488×2240 uint8）；⑤ 不同 pid 产生不同临时名。**这条是"此修复不可能改变任何数字"的实证依据**——它只改变掩膜字节在被改名就位前写在哪里。
   **指纹更新**：`src/data/external.py` 旧 `6e96340dd5c61bc94db6ccb4e48614f95fcae4bde0984e7e0f140de3d3e60c0c` → **新 `1693aaa7836088a32409ba5982ccece56a4903e5a11cd14a0d382bee23338d6d`**（2026-09-17 21:55:43，16,760 字节）。**已交付的全部 43 张 E3 生物标志物表均产生于旧哈希之下**；因上述逐字节验证，新旧哈希下的掩膜内容相同，故无需重跑任何一张表，历史结果与新代码不冲突。`src/pivot/e3_external.py` 未改动，仍为 `af65105e…`（与 21:15 冻结一致）。
   **文档**：`data/EXTERNAL_DATASETS.md` 的前置条件一节改为"竞态已修复，但仍建议预建 FOV"，并给出修复**未覆盖**的三条理由——把 FOV 生成移出计时循环（否则逐图耗时不再可信）、让损坏或不可读的源图在开跑前而非分片波次数小时后暴露、可在长跑之前核对掩膜数与记录数。原竞态描述改为过去时并保留，因为**那个报错签名值得认得**（imageio 回退到 SPE 插件后报 `cannot reshape array of size 1701 into shape (36396,60828)`，与 I/O 错误毫无相似之处）。
-  **执行顺序说明（与协调者指示不同，已核实其可行性）**：协调者要求 (2) 在 (1) ODIR 分类跑完之后再做。经核实 `run_clf` **从不导入** `src.data.external`——`ast` 扫描确认 `ensure_fov` 与 `load_external` 的导入分别只出现在 `_row_for` 与 `run_bio` 内，均属 bio 阶段；且三个节点的 bio 工作已全部完成交付，不存在可被扰动的 bio 运行。故改为与 (1) 并行实施：排序约束在此不具约束力，而本会话今日已中断过一次，推迟到 4–6 小时后有使该修复丢失的实际风险。已如实上报。
+  **执行顺序说明（与统一安排不同，已核实其可行性）**：项目要求 (2) 在 (1) ODIR 分类跑完之后再做。经核实 `run_clf` **从不导入** `src.data.external`——`ast` 扫描确认 `ensure_fov` 与 `load_external` 的导入分别只出现在 `_row_for` 与 `run_bio` 内，均属 bio 阶段；且三个节点的 bio 工作已全部完成交付，不存在可被扰动的 bio 运行。故改为与 (1) 并行实施：排序约束在此不具约束力，而本会话今日已中断过一次，推迟到 4–6 小时后有使该修复丢失的实际风险。已如实上报。
 - 2026-09-17 21:59 **稿件模板（用户指示）**：paper2 改用 Elsevier CAS 双栏模板 cas-dc（els-cas-templates.zip），具体期刊待定；后备论文保持 cas-sc。
 
 - 2026-09-17 22:02 **`ensure_fov` 原子写修复已同步到 LAN 节点；"无需重跑"的结论由我方独立复核确认
@@ -775,16 +775,16 @@
   **重要发现——跨机器时"字节比对 FOV 掩膜"是无效核查，会误报**：IDRiD 的 25 个掩膜
   **字节全部不同但像素全部相同**。原因：IDRiD 的 FOV 是在**本地 Windows** 生成后同步过去的，
   PNG 编码（zlib/PIL 版本）与 Linux 侧重新生成的不同；Messidor-2 与 APTOS 的掩膜是在节点上
-  生成的，故字节也相同。E2 agent 的"字节相同"结论成立，仅因其在**生成掩膜的那台机器上**核查。
+  生成的，故字节也相同。E2 运行 的"字节相同"结论成立，仅因其在**生成掩膜的那台机器上**核查。
   **规则**：核查 FOV 一致性**必须比像素、不能比字节**，除非能确认两侧由同一台机器、同一套库生成。
   否则会在完全健康的数据上得出"损坏"结论——而本项目对 FOV 来源最为敏感
   （E4 的"只复制、绝不重新生成"规则即源于此），这类误报的代价很高。
-- 2026-09-17 22:05 **方法更正：FOV 掩膜的一致性必须比较**像素**而非字节，除非两边由同一台机器与同一套库产生**（由 LAN agent 在复核 21:55 条时发现，本地已确认其成立）。
-  **发现经过**：21:55 条用 SHA-256 逐字节比对来证明"修复不改变任何掩膜"。LAN agent 在其节点上照此复核 IDRiD，得到 **25/25 全部不同**，几乎据此上报故障；改比像素则 **25/25 完全相同、最大差 0**。原因：IDRiD 的 FOV 缓存是在本地 **Windows** 机器上生成后同步到节点的，其 PNG 字节带有与 Linux 端 PIL/zlib 不同的编码；而 Messidor-2 与 APTOS 的缓存本就在节点上生成，故字节也相同。三个队列合计 **45/45 像素相同**，21:55 条的结论成立且证据基础由 4 张扩大到 45 张。
+- 2026-09-17 22:05 **方法更正：FOV 掩膜的一致性必须比较**像素**而非字节，除非两边由同一台机器与同一套库产生**（由 LAN 节点 在复核 21:55 条时发现，本地已确认其成立）。
+  **发现经过**：21:55 条用 SHA-256 逐字节比对来证明"修复不改变任何掩膜"。LAN 节点 在其节点上照此复核 IDRiD，得到 **25/25 全部不同**，几乎据此上报故障；改比像素则 **25/25 完全相同、最大差 0**。原因：IDRiD 的 FOV 缓存是在本地 **Windows** 机器上生成后同步到节点的，其 PNG 字节带有与 Linux 端 PIL/zlib 不同的编码；而 Messidor-2 与 APTOS 的缓存本就在节点上生成，故字节也相同。三个队列合计 **45/45 像素相同**，21:55 条的结论成立且证据基础由 4 张扩大到 45 张。
   **本地验证（两个方向都查了）**：① 在**产出该掩膜的机器上**重新生成，字节与像素结论一致——idrid 5/5、messidor2 3/3、aptos2019 3/3 既逐字节相同也逐像素相同，故 21:55 条当时的判断没有被这一效应污染；② PNG 字节确实依赖编码器设置——同一幅像素在 compress_level 0/6/9 下产生 **3 个互不相同的字节流**，像素完全一致。因此字节相等是比像素相等**更强**的条件，强出来的那部分与掩膜内容无关。
   **规则**：凡涉及掩膜一致性的核验，一律比较 `np.array_equal` 的像素；字节比对只在"同机同库产出"这一附加前提成立时才等价，而该前提**不写在方法里就看不见**，也不会在换机器复核时自动成立。
   **与 E4"只复制、不重新生成"规则的关系（须写进使用说明）**：对**复制来的**掩膜做字节比对，会在数据完全健康的情况下报出"损坏"；更糟的是，它可能促使人以"重新生成"来修复，而重新生成正是该规则要避免的动作。需要说明的是，重新生成本身在**生成器与依赖一致时是安全的**（本条 ① 已实测像素相同）；之所以仍然优先复制，是因为复制彻底消除了对本地库栈的依赖，而这种依赖无法跨机器低成本验证。
-  **对"独立复算"常规做法的补充建议（与 LAN 一致，交协调者裁定）**：当主张本身是关于**可复现性**时，独立复算应当**在不同的基础设施上**进行——今日正是"在同一台机器上重复同一检查"掩盖了编码依赖。这是今日第三次由独立复算推翻既有结论，也是第一次出错的是**方法**而不是数字。
+  **对"独立复算"常规做法的补充建议（与 LAN 一致，交决定）**：当主张本身是关于**可复现性**时，独立复算应当**在不同的基础设施上**进行——今日正是"在同一台机器上重复同一检查"掩盖了编码依赖。这是今日第三次由独立复算推翻既有结论，也是第一次出错的是**方法**而不是数字。
 
 - 2026-09-17 22:27 **论文端：paper2 改用 Elsevier CAS **双栏**模板（`cas-dc`）。**
   `main.tex` 改为 `\documentclass[a4paper,fleqn]{cas-dc}` + CAS 题首（`sections/frontmatter_cas.tex`、
@@ -866,7 +866,7 @@
   **Methods / Results / 补充材料零 todo**。映射表见新增的 `paper2/REVIEW_R2_RESPONSE.md`；`NUMBER_SOURCES.md` 补上 ODIR 块、
   `tab:e2seed` 行与“pooled 行到底是什么”的定义。
   **未做且已写明的两项**：human-human 同构比较（需第二位标注者的逐图生物标记）与 view-spread 全量重跑（C3 维持 exploratory）。
-  **期刊定位**（评审人意见，供协调者决策）：AI in Medicine / CMPB 自然契合，MedIA 仍属 stretch；本轮未做任何面向单一期刊的改写，
+  **期刊定位**（评审人意见，供负责人决策）：AI in Medicine / CMPB 自然契合，MedIA 仍属 stretch；本轮未做任何面向单一期刊的改写，
   稿件在 cas-dc 下保持期刊中立。
 
 - 2026-09-18 00:26 **外部第三轮评审（8.3/10，`review/paper2_r3_reply.md`）的七项必修已全部落实；本轮**纯编辑**，未跑任何新分析。**
@@ -1473,7 +1473,7 @@
     当前全库 **219 个预测目录全部通过**。
   - **教训**：`last.pt` 这种"每个 epoch 都覆盖"的文件永远不能当作"训练完成"的依赖标记；
     完成标记必须是只在结束时写一次的文件。
-- 2026-09-18 19:50 **E4 正确性缺陷与处置（协调者裁定）**：GPU 代理发现 E4 折 4 的 seed-0 三个微调臂（cfloss/continued/reliseg）在训练未完成时即被推理（infer_meta 记录 epoch 24/38/39，早于 summary.json 9–14 分钟；根因：推理任务以每 epoch 重写的 last.pt 为依赖而非 summary.json），另 fold2/reliseg_s3 训练中途死亡后被推理。处置：推理依赖改为 summary.json（infer_dep）；受影响的预测目录与生物标志物缓存改名保留（*_STALE_20260918_1945）；折 4 seed-0 三臂仅需重推理（last.pt 完整于 epoch 49），fold2/reliseg_s3 重训；修复后重新生成 E4 全部 CSV 与 E4_REPORT.md（seed 0 与 5 种子），论文中所有 E4 数字以修复后为准；新增门禁脚本 g9_verify_units.py（219 个预测目录通过）。FIVES 6 种子：主终点所有图像 bootstrap CI 含零；total_length 的种子级区间 [+0.0001, +0.0009] 排除零但效应 ~5e-4 → 表述为"可检出但可忽略"。
+- 2026-09-18 19:50 **E4 正确性缺陷与处置（决定）**：GPU 代理发现 E4 折 4 的 seed-0 三个微调臂（cfloss/continued/reliseg）在训练未完成时即被推理（infer_meta 记录 epoch 24/38/39，早于 summary.json 9–14 分钟；根因：推理任务以每 epoch 重写的 last.pt 为依赖而非 summary.json），另 fold2/reliseg_s3 训练中途死亡后被推理。处置：推理依赖改为 summary.json（infer_dep）；受影响的预测目录与生物标志物缓存改名保留（*_STALE_20260918_1945）；折 4 seed-0 三臂仅需重推理（last.pt 完整于 epoch 49），fold2/reliseg_s3 重训；修复后重新生成 E4 全部 CSV 与 E4_REPORT.md（seed 0 与 5 种子），论文中所有 E4 数字以修复后为准；新增门禁脚本 g9_verify_units.py（219 个预测目录通过）。FIVES 6 种子：主终点所有图像 bootstrap CI 含零；total_length 的种子级区间 [+0.0001, +0.0009] 排除零但效应 ~5e-4 → 表述为"可检出但可忽略"。
 
 - 2026-09-18 20:05 **FIVES 六种子结果已入稿，**最后一个 `\todo` 关闭——PDF 里已经一条都没有**。**
   生成器改为**按队列取最宽的 pooled 行**（FIVES 有 `pooled(0,1,2,3,4,5)`、HRF 仍为 `pooled(0,1,2)`），
@@ -1533,7 +1533,7 @@
     `results/pivot/E4_FOLD4_REPAIR.md`（修复前后全对照，独立成文件所以不会被下次重算覆盖）。
   - **实现上的两个坑**（都已修）：`analyse --seed` 的输出后缀我先是写成 `cmd_analyse` 里的闭包
     `_out()`，但 `write_report` 是顶层函数，于是 seed 0 的 CSV 写完之后崩在
-    `NameError: _out` ——**CSV 更新了、报告还是旧的**，这正是协调者看到的现象；
+    `NameError: _out` ——**CSV 更新了、报告还是旧的**，这正是负责人看到的现象；
     改成给 `write_report` 传 `suffix` 参数。另外用 heredoc 注入代码时 `\n` 被吞成真换行，
     产生了未闭合字符串，已逐处改回单行 print。
   - **E2 侧**：规范的 6 种子 `e2_analysis` 已于 **20:42** 跑完，
@@ -1551,7 +1551,7 @@
     `\textbf` 表示区间不含零，`\underline` 仍表示突破预注册安全边界。
   - **`fig_e4_replication.py` 左panel 现在画两层**：细须为图像级 bootstrap，
     粗淡色条为跨 5 种子的 t 区间；图例加灰色代理句柄，`ylim` 下沿放宽以免图例压住最后一行。
-  - **正文措辞（按协调者要求的精度）**：图像级下 FD/density/length 三个终点在每个种子内区间均含零；
+  - **正文措辞（按项目要求的精度）**：图像级下 FD/density/length 三个终点在每个种子内区间均含零；
     跨 5 次重训三者同向且种子级区间均不含零——density −0.00220 [−0.00353, −0.00087] 0/5 为正、
     FD −0.00694 [−0.01199, −0.00189] 0/5、total_length −0.00047 [−0.00092, −0.00001]
     **1/5 反向且区间只在最后一位数上排除零**（这一点如实写出，未笼统写成"符号完全一致"）。
@@ -1574,7 +1574,7 @@
   - **种子数混用**在表题、Methods §3.6 与 §5.12 三处写明：Fundus-AVSeg 每臂每折 5 个微调种子，
     CF-Loss 只微调 1 次（只出现在面板 a），MAPLES-DR 零样本仍为原来的 3 个 FIVES 训练种子。
   - **摘要长度**：R3 收到 250 词后各轮加内容已涨到 **326 词**；本轮加入 E4 句并重新收紧到 **302 词**。
-    再压到 250 必须删掉一个完整结果，故**留给协调者裁定**，未自行删除任何经评审确认的限定语。
+    再压到 250 必须删掉一个完整结果，故**留给决定**，未自行删除任何经评审确认的限定语。
   - **构建**：`main.pdf` 52 页（正文含参考文献 33 页，补充自 34 页起）、`main_review.pdf` 52 页；
     两者均**无未定义引用/交叉引用**；`\todo` = **0**；overfull hbox 25 处，除 `\maketitle` 里
     CAS highlights 框那处 123.6pt（既有、渲染正常）外全部 < 27pt。
@@ -1582,7 +1582,7 @@
   - **同步更新**：`NUMBER_SOURCES.md` §5.12 全表（新增两层抽样的说明、跨种子行、修复审计行、种子数行）、
     `REVIEW_CMIG_RESPONSE.md` 追加 "Round 11" 一节。
 
-- 2026-09-18 23:17 **摘要压缩到 250 词（协调者裁定：一个结果都不许删，只压措辞）。**
+- 2026-09-18 23:17 **摘要压缩到 250 词（决定：一个结果都不许删，只压措辞）。**
   - **326 → 302 → 250 词，八个结果一个未丢**：三轴量级对比（0.25–1.54σ / 0.72–1.48σ / 0.006–0.115σ，
     最严协变量匹配下仍小 17–20 倍）、参照掩膜下游臂（FIVES 少数 AUC 点 vs HRF 0.217，四个斜率 0.37–0.81
     "是衰减不是平移"）、生态相关性免责、注入实验三个分句（常数偏移逐位不变 / 逐图相关残差单调衰减 /
@@ -1669,7 +1669,7 @@
   - **Related Work**：新增 fox2026impact（CMIG 131:102767，精确匹配）、li2025evaluation（CMIG 124:102574，强匹配）、han2025mamba（CMIG 125:102645，**部分匹配**：NIR-II 为主、视网膜为第二域；Crossref 363 条 CMIG 记录中无纯视网膜 2025 细血管论文，未编造）。新增 novelty 表（AutoMorph/CF-Loss/VascX/Fox 2026/本文 × 7 列），逐格依据写入 BIB_AUDIT.md。DOI 均经 Crossref 核对。
   - **版面**：三个 wrapper 去掉 lineno；宽浮动体 [!tp]、dblfloatpagefraction .75、flushbottom、emergencystretch 2.5em、去掉 back matter 前的强制 \clearpage；主文图全部按印刷尺寸（6.84 in）矢量重绘、统一字体与配色；生成表统一经 fittab 测量缩放（最小 0.859，四张最宽补充表改为横排页）。**顺带修复**：补充 E2 forest 此前每次渲染都漏画 FIVES CF-Loss 行（pooled 种子选择按队列而非按臂）。
   - **构建与检查**：main.pdf 40 页（高亮页 + 正文含参考文献 15 印刷页 + 2 页简历 + 补充 23 页），main_review.pdf 38 页（正文 14 页）；未定义引用 0、重复标签 0、\todo 0、?? 0、渲染文本反斜杠宏 0、正文浮动体全在补充前；footer/margin 预检 0 页；>35% 留白页仅 CAS 高亮页、末页简历页（main）与末页；脱敏 0/23，阳性对照 23/23。
-- 2026-09-29 19:24 **协调者追加两项已完成**：(1) cover_letter.tex 正文按新定位重写——measurement-validation framework 三组件、R1–R4 四结果、干预=压力测试、明确 CMIG 适配（引 Fox 2026 CMIG 131:102767 与 Li 2025 CMIG 124:102574 为本刊先例）、"What the paper is not"（非方法论文、非因果归因、无等效性声明、非临床效度），收件期刊定为 CMIG，2 页、编译无错；(2) main_elsarticle.pdf 重建（64 页，正文 29 页，0 未定义引用）；novelty 表加 fittab 以免单栏版溢出 185pt。三个 wrapper 均为最新；main/main_review 复检：0 未定义、0 重复标签、footer/margin 预检 0 页、脱敏 0/23。待命：external review 审阅/版面修改清单。
+- 2026-09-29 19:24 **负责人追加两项已完成**：(1) cover_letter.tex 正文按新定位重写——measurement-validation framework 三组件、R1–R4 四结果、干预=压力测试、明确 CMIG 适配（引 Fox 2026 CMIG 131:102767 与 Li 2025 CMIG 124:102574 为本刊先例）、"What the paper is not"（非方法论文、非因果归因、无等效性声明、非临床效度），收件期刊定为 CMIG，2 页、编译无错；(2) main_elsarticle.pdf 重建（64 页，正文 29 页，0 未定义引用）；novelty 表加 fittab 以免单栏版溢出 185pt。三个 wrapper 均为最新；main/main_review 复检：0 未定义、0 重复标签、footer/margin 预检 0 页、脱敏 0/23。待命：external review 审阅/版面修改清单。
 - 2026-09-29 20:36 **external review 第 A 轮（内容 8.4/10 三项必修 + 版面清单）与用户两项格式指令全部落地；不改任何数字。**
   - 内容：R2 表述在摘要/亮点3/引言/§5.2/图4题注/结论/求职信统一为表 4 所支持的口径（HRF 四个斜率点估计均 <1，区间仅对 length 与 tortuosity 排除 1、对 density 与 FD 覆盖 1；FIVES density/length 校准良好、FD 拉伸 β=1.58、tortuosity 一致性差 CCC 0.41）；标题 "downstream attenuation" → "downstream reference gaps"（三份 front matter、highlights.tex、求职信）；亮点5 → "Tested remedies did not beat same-budget or matched controls on fidelity."（更正：上一轮报告的亮点5 改写实际未写入文件，本轮才生效）；交叉引用用脚本机械核对 108 处 0 问题，修正 §5.4/表5 的 "S10" 为 S8–S14 分项、表 S18 题注 "main text"、方法中消融指向 S11、补引用三个未被引用的补充浮动体。摘要 240 词（wc.py）。
   - 版面：亮点单独成 highlights.pdf 并从稿件中移除；"Page n of N" 总数修正（class 在最终 clearpage 后记页码，多 1）；PDF Creator 改记 cas-dc（Elsevier 的 cas-dc.cls 硬写 cas-sc）；脱敏版去掉空 "ORCID(s):"；图 2 改 pcolormesh 纯矢量、图 4/S1–S4 散点不再栅格化、图 3 眼底/掩膜 600 ppi、全部图字 ≥7 pt；新 tools/fig_injection_panel.py 重绘图 S5（线型+标记冗余编码），图 S7 种子加标记/线型；参考文献 note→annote（不打印），无 DOI 的两条统一 "Available at" URL，interlinepenalty=10000 防条目跨页，全局 widow/club 10000；表 S16/S17/S22/S23/S24 为真横排页（.aux 记页号 → /Rotate 90）；表 S18 改长格式竖排；合并嵌套 fittab；最小表缩放 0.936。
@@ -1703,7 +1703,7 @@
   - 剩余作者项：代码仓库 URL、求职信签名与地址。
 - 2026-09-30 09:09 **用户第四次审阅：AI 文风痕迹（review/user_ai_style_review_20260930.md）**：执行去模板化/去防御化的语言重写（不改任何数字与结论）：削减口头禅词频、删除审稿回复式语句与措辞元话语、合并重复的 R1–R4 复述、图表注压缩至两句、去破折号/分号/括号密度、去数字化标签骨架、修复重复句、代码词改为自然表述。先由 external review 逐条判定，再修改并复审至收敛。
 - 2026-09-30 10:05 **文风修订第 1 轮（用户第四次审阅 + 外部文风判定 review/style_r1_reply.md，47/50 条成立）完成客观项与指南第二轮；不改任何数字、结论范围或表格数值。** (1) 口头禅词频（pdftotext 全文 / 正文）：locked 36/20→0/0，frozen 67/26→6/6（仅 refitted vs frozen rule 一处概念），fixed before 11/6→1/1（摘要一处），same-budget 46/16→0/0（统一为 continued-training control），after methodological review 8/5→1/1（仅 §4.4 provenance 段），rather than 30/11→0/0，"not a" 20/7→1/1；保留三处 X-not-Y：benchmark, not a ceiling；compatibility, not identification；ecological contrast, not attribution。(2) 删除全部审稿回复式元话语（straw man、deliberately not saying、nothing … should be read as、Read the magnitudes not the stars、not a second chance、not a pre-registration、no claim … appears anywhere、stated rather than hidden、bounded negative、No arrow asserts、price it、made that answer readable、wrong way、one illustration / rests on）。(3) 预设说明只在 §4.4 Statistics and analysis provenance 一段写三层（主分析与规则在看结果前设定；审稿后新增三项敏感性分析；Fundus-AVSeg 在 FIVES 零结果后选定、复制方案在其任何结果前设定），摘要保留一句。(4) 摘要去 First–Fourth 与创新性辩护（224 词）；引言去 R1–R4 复述；讨论改为 Interpretation and implications + Limitations（名词短语小标题），Recommendations 命令式列表并入讨论末段；结论 111 词。(5) 小标题去 Component 1–3 / R1–R4，图 1 去 R 标签与数字徽标；补充材料小标题改普通名称，E2/E3/E4 代号不再作模块名。(6) 51 个图/表题注全部 ≤2 句且无破折号：生成表的题注由 tools/_captions.py 在 write_table 中统一覆盖（不含结果数字），题注中的解释性内容移入补充正文；表 1 题注两句 + 表下列注；表 S18 改为 Remedy / Control / Primary endpoint / Safety endpoint 四列（数值不变）；mk_tab_scale.py 补入 build_tables 列表。(7) 破折号 153→0，分号 279→37（正文 7，余为表格单元与图内标签），左括号 728→534（正文 211→135；源文件 prose 311→约 185，长于 10 词与嵌套括号清零）。(8) 重复句扫描（dupscan.py）：修订前 3 处完全重复 + 1 处近似（含 p38 practical-effect threshold 连写），修订后 0/0。(9) 代码词：replication_success = FALSE → replication criterion not met；last.pt → final saved checkpoint；bit-identical → identical to machine precision / unchanged；summary.json 不再出现。(10) 去拟人化（asked / say / invites / reads）。求职信同步重写（去 R1–R4、破折号、locked）；亮点 2–4 去分号与对偶（≤85 字符）。构建：main.pdf 41 页（正文含参考文献 14 页）、main_review.pdf 39 页（13 页）、main_elsarticle.pdf 66 页、highlights 1 页、cover_letter 2 页；0 todo/未定义/重复标签/丢失/??/反斜杠宏/控制字符，交叉引用 0 问题，最小表缩放 0.936，横排页 4，脱敏 0/23、阳性对照 23/23；front matter 123pt overfull 为既有（换回旧摘要复现）。计数表 review/style_counts_after.md；源文件存档 paper2/sections/_archive_pre_style_20260930/、paper2/tools/_archive_pre_style_20260930/。01:18 的 SHA-256 冻结集作废，待本轮复审收敛后重新冻结。
-- 2026-09-30 10:39 **最终冻结（文风复审 review/style_r2_reply.md 判定已收敛为普通科研写作；按协调者十项局部修订落地后冻结）。** 不改任何数字、结论范围或表格数值。十项：(1) 摘要去掉 "matched controls, with …" 的重复 with，改为独立一句"主分析与决策规则在查看结果前设定"；(2) 引言贡献改为正面陈述（建立在 Deming、Lin 一致性、Bland--Altman 与误差注入之上，贡献在于组合方式）；(3) 删 "does not amount to a universal validation"；(4) 引言范围句改为"协议在形式上通用，本文证据来自视网膜血管"；(5) §3.5 删 "It is not proposed as a method"；(6) §5.4 "gains nothing beyond" → "did not improve fidelity relative to"，并恢复 CF-Loss 的 "on HRF" 限定（此前改写扩大了表面范围，已更正）；(7) 讨论删 "does not make such biomarkers unusable"，"reads the distorted value" → "receives"；(8) "largest effect in the programme" 改为具体陈述：tortuosity 偏移对 continued-training 对照 +1.62σ（HRF，声明界值的六倍），留出队列跨重训 Δr −0.059 超过 −0.05 界值，Dice/clDice 非劣，删 "It was detected because…"；(9) 局限性 tortuosity 句拆开，"changes no model…" 改为 "uses the same models, data and thresholds"；(10) 表 1 "(✓) partially reported"；表 6 与表 S18 题注补成完整句；补充 S14 删 "A null is informative only…"，检查点缺陷段改为普通叙述（"After correction, all 244 prediction outputs passed the completion check"），小标题改 Pairing and checkpoint completion。保留 frozen 6 处与三处 X-not-Y。重建五件交付并复检：0 todo/未定义/重复标签/丢失/??/反斜杠宏/控制字符，无作者-年份残留，交叉引用 0 问题，正文浮动体全在补充前，最小表缩放 0.936，横排页 4，摘要 224 词，重复句 0，脱敏 0/23、阳性对照 23/23；front matter 123pt overfull 为既有。计数 review/style_counts_final.md。交付清单与 SHA-256：
+- 2026-09-30 10:39 **最终冻结（文风复审 review/style_r2_reply.md 判定已收敛为普通科研写作；按负责人十项局部修订落地后冻结）。** 不改任何数字、结论范围或表格数值。十项：(1) 摘要去掉 "matched controls, with …" 的重复 with，改为独立一句"主分析与决策规则在查看结果前设定"；(2) 引言贡献改为正面陈述（建立在 Deming、Lin 一致性、Bland--Altman 与误差注入之上，贡献在于组合方式）；(3) 删 "does not amount to a universal validation"；(4) 引言范围句改为"协议在形式上通用，本文证据来自视网膜血管"；(5) §3.5 删 "It is not proposed as a method"；(6) §5.4 "gains nothing beyond" → "did not improve fidelity relative to"，并恢复 CF-Loss 的 "on HRF" 限定（此前改写扩大了表面范围，已更正）；(7) 讨论删 "does not make such biomarkers unusable"，"reads the distorted value" → "receives"；(8) "largest effect in the programme" 改为具体陈述：tortuosity 偏移对 continued-training 对照 +1.62σ（HRF，声明界值的六倍），留出队列跨重训 Δr −0.059 超过 −0.05 界值，Dice/clDice 非劣，删 "It was detected because…"；(9) 局限性 tortuosity 句拆开，"changes no model…" 改为 "uses the same models, data and thresholds"；(10) 表 1 "(✓) partially reported"；表 6 与表 S18 题注补成完整句；补充 S14 删 "A null is informative only…"，检查点缺陷段改为普通叙述（"After correction, all 244 prediction outputs passed the completion check"），小标题改 Pairing and checkpoint completion。保留 frozen 6 处与三处 X-not-Y。重建五件交付并复检：0 todo/未定义/重复标签/丢失/??/反斜杠宏/控制字符，无作者-年份残留，交叉引用 0 问题，正文浮动体全在补充前，最小表缩放 0.936，横排页 4，摘要 224 词，重复句 0，脱敏 0/23、阳性对照 23/23；front matter 123pt overfull 为既有。计数 review/style_counts_final.md。交付清单与 SHA-256：
   - paper2/main.pdf (40 pp.) c0093ee2e0864d1ca8c5b97491d56d131882a78494999a90c96185a38d5297ac
   - paper2/main_review.pdf (39 pp., redacted) 8b80bf886a6be964eeb8a211f068a23a1ad2b531d3a6452c102014f52c800939
   - paper2/main_elsarticle.pdf (66 pp., single-column reference build) c3f87fcc468e6974a35ecb13391637e5e03bcd5a22ec848a618dbbf2a0318dfd

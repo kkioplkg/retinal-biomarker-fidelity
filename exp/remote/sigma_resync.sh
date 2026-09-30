@@ -2,7 +2,7 @@
 # sigma_resync -- watch results/gateA_biomarker_scales_train.csv for CONTENT
 # change and rebuild every step-G chain against the new table.
 #
-# Coordinator 2026-09-03 10:40: the 10:13 table is being replaced wholesale by
+# Decision 2026-09-03 10:40: the 10:13 table is being replaced wholesale by
 # an all-native one (DRIVE/CHASE unchanged, HRF re-measured at native rather
 # than C1's 0.4384 work scale, FIVES added from the first 120 training masks).
 # That invalidates EVERY G:data / G:fit built against 10:13 -- not only the
@@ -70,7 +70,7 @@ while :; do
       awk -F, 'NR==1 || $1=="HRF" && $2=="FD_skan" {print "    " $0}' "$CSV" | head -3
 
       # push the new table + the whole src tree (carries src/rigr/candidates.py,
-      # the port-clustering rule the coordinator flagged)
+      # the port-clustering rule flagged in review)
       if tar czf - --exclude='__pycache__' --exclude='*.pyc' "$CSV" src \
            | $SSH "cd $R && rm -rf src/__pycache__ src/*/__pycache__ && tar xzf - -C $R && echo PUSH_OK" \
            | grep -q PUSH_OK; then

@@ -117,7 +117,7 @@ The denominator never depends on model performance; FIVES' n = 800 cannot
 dominate it; between-cohort location shifts cannot inflate it. Length-like
 biomarkers are FOV-diameter normalised before step (1), because a pixel count is
 not comparable across cohorts of different resolution. **The same `s_k` applies
-unchanged to the second segmenter family the GPU agent is training** -- that is
+unchanged to the second segmenter family the GPU job is training** -- that is
 the point of fixing it now.
 
 Values (FOV-normalised units, all four training splits, equal cohort weight):
@@ -257,7 +257,7 @@ constant-offset model cannot represent.)
    decomposition is incomplete in exactly the way the reviewer suspected, and
    the slope belongs in the main table.
 
-A scatter + Bland-Altman figure per dataset is written for the paper agent:
+A scatter + Bland-Altman figure per dataset is written for the writing pass:
 `figs/pivot/r2_calibration_{drive,chasedb1,hrf,fives}.{png,pdf}` (4 rows x 2
 columns; left = identity-line scatter with the OLS and Deming fits, right =
 Bland-Altman with mean difference, 95 % limits and the proportional-bias line).
@@ -271,7 +271,7 @@ below r in prominence. `r2_main_table.csv` is that table, one row per
 the audit's constant offset), `alpha` = the Deming intercept in the
 median-centred frame, every quantity carrying its bootstrap CI, plus the
 proportional-bias slope with CI and p, and the dataset-level AUC gap joined from
-`r2_delta_auc.csv` (skan4 / logreg). The paper agent should take the main table
+`r2_delta_auc.csv` (skan4 / logreg). The writing pass should take the main table
 from this file rather than assembling it from `r2_calibration.csv`.
 
 ### 5b. Proportional-distortion arm (`r2_dose_proportional.csv`, `r2_dose_proportional_fixedrule.csv`)
@@ -465,7 +465,7 @@ native 3504 and 2048.
 
 `runs/seg_oof/fives/pred/{prob,mask}` holds **600 of 600** cross-fitted
 out-of-fold predictions for the FIVES training split (verified file by file;
-`fives_oof_coverage.csv`). **Nothing is missing, so no request to the GPU agent
+`fives_oof_coverage.csv`). **Nothing is missing, so no request to the GPU job
 was needed and `fives_oof_missing.csv` was not written.** The shipped
 `bio_master.csv` capped the training split at 50 images per class (200 of 600)
 purely to bound CPU time. `src.pivot.build_table --datasets fives --sources
@@ -775,7 +775,7 @@ analysis, excluded in a sensitivity analysis); both reported.
 | segformer_b0 | 0 | **FIVES** | 200 | 0 | **2** | 2 (1.0 %) | **Glaucoma 2/50**, all others 0/50 |
 | segformer_b0 | 1 | **FIVES** | 200 | 0 | **3** | 3 (1.5 %) | **Glaucoma 3/50**, all others 0/50 |
 
-The LWNet counts reproduce the GPU agent's shipped `lwnet_mask_quality.csv`
+The LWNet counts reproduce the GPU job's shipped `lwnet_mask_quality.csv`
 **exactly** (`crosscheck` column).
 
 **This is the substantive new finding, and it is stronger than expected.**
@@ -920,10 +920,10 @@ is the *direction* of the FIVES slope under severe domain shift (LWNet stretches
 beta 1.3-3.1; both in-domain families sit near 1), and that should be described
 as a domain-shift property rather than averaged into a single claim.
 
-## Caveats the paper agent must carry
+## Caveats the writing pass must carry
 
 1. **The literature table's DOI column is nearly empty.** Only 5 of 97 rows in
-   `pixel_literature.csv` carry a DOI, because the agent that built it recorded
+   `pixel_literature.csv` carry a DOI, because the run that built it recorded
    a DOI only where it actually saw the string on a fetched page. Every row does
    carry `source_url` (mostly arXiv HTML). **The DOIs must be resolved before
    these are cited**, and the `notes` column must be read: several rows are
@@ -950,6 +950,6 @@ as a domain-shift property rather than averaged into a single claim.
    quote the level table, not a single design, because the point of the exercise
    is that the estimate is flat across levels.
 8. Everything here is segmentation seed 0 for the audit tables and seeds 0-2 for
-   the pixel metrics; the second segmenter family (GPU agent) and the extra
+   the pixel metrics; the second segmenter family (GPU job) and the extra
    ReliSeg seeds are not in scope for this report. The common scale `s_k` is
    fixed and the same `s_k` applies to the second family when it lands.

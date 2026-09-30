@@ -150,11 +150,11 @@ done
 echo "[D] evapore_hrf.pt local: $(stat -c%s runs/repair/ckpt/evapore_hrf.pt) bytes"
 
 # --------------------------------------------------------------- D2
-# Coordinator ruling 2026-09-05 20:30: once evapore_hrf is done the box would
+# Decision 2026-09-05 20:30: once evapore_hrf is done the box would
 # otherwise idle until shutdown, so run AMP retrains of the CHEAP datasets as a
 # supplementary consistency check -> runs/repair/ckpt/evapore_<ds>_amp.pt.
 # FIVES is deliberately EXCLUDED: its fp32 training alone took 101155 s (28.1 h,
-# 55 epochs), which blows the coordinator's ~10 h budget on its own.  drive
+# 55 epochs), which blows the agreed ~10 h budget on its own.  drive
 # (5625 s) + chasedb1 (3438 s) are ~2.5-3.5 h together.
 # Tab.2's EVAPORE rows still come from the fp32 checkpoints for these three.
 AMP_DS="${AMP_DS:-drive chasedb1}"
@@ -224,7 +224,7 @@ for d in drive chasedb1 hrf fives; do
   chk "runs/rigr_data/lodo_$d" 1000
 done
 chk results/tab1_exp2.csv 1000
-# supplementary AMP consistency checkpoints (coordinator ruling 2026-09-05 20:30)
+# supplementary AMP consistency checkpoints (decision 2026-09-05 20:30)
 for d in $AMP_DS; do chk "runs/repair/ckpt/evapore_${d}_amp.pt" 60000; done
 for m in prob risk uniform; do rows "runs/rigr/$m/stare/seed0/per_image.csv" 11; done
 chk runs/rigr_head/stare 1000000

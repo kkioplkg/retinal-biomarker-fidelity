@@ -178,7 +178,7 @@ def e3_checkpoints() -> List[tuple]:
 
 
 #: E3 work owned by the LAN node (LAN_HOST, one 3080), set up by a
-#: separate agent on 2026-09-17 12:05: every FIVES-trained checkpoint on the
+#: separate job on 2026-09-17 12:05: every FIVES-trained checkpoint on the
 #: three primary/replication cohorts.  Its results rsync back into
 #: ``results/pivot/e3/<ext>/<tag>/``.  These pairs are NOT queued locally --
 #: two nodes writing the same resumable ``bio.csv`` would interleave rows.
@@ -193,7 +193,7 @@ def e3_is_remote(ext: str, ds: str) -> bool:
 def e3_local_units() -> List[tuple]:
     """(external set, dataset, seed, config, ckpt) this node runs, in order.
 
-    Local GPUs are reserved (coordinator, 2026-09-17 12:05) for the E2 work
+    Local GPUs are reserved (team decision, 2026-09-17 12:05) for the E2 work
     first; what is left of E3 for this node is
       1. HRF seed 0 x {baseline, ReliSeg} on the three primary cohorts -- the
          LAN node only carries the FIVES-trained checkpoints; and

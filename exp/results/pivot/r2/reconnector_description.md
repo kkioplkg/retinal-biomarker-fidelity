@@ -1,6 +1,6 @@
 # The conservative reconnector used as the topology counterfactual
 
-*Self-contained description for the paper agent, extracted from the fallback
+*Self-contained description for the writing pass, extracted from the fallback
 manuscript `paper/sections/03_method.tex` (§ "RiGR: risk-guided graph repair",
 § "Candidate generation and attachment ports", § "Corridor-restricted lifted-state
 A\*", § "Pair scorer and probability calibration", § "Asymmetric expected utility

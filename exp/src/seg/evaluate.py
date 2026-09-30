@@ -1,7 +1,7 @@
 """Evaluate segmentation predictions and write results/seg_per_image.csv.
 
 Metrics come from ``src.topo.metrics.evaluate_all`` (Dice/F1, clDice, Betti-0/1
-errors, BCS, Junction-F1 ...), which is written under S2 by another agent.  If
+errors, BCS, Junction-F1 ...), which is written under S2 by another job.  If
 that module is not importable yet, a clearly-labelled minimal fallback
 (Dice/F1/precision/recall/accuracy/specificity/AUC/AP) is used instead and the
 ``metrics_source`` column of the CSV says so.

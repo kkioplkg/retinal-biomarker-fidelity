@@ -8,7 +8,7 @@
 #   runs/rigr_models/<ds>/seed0/btr_false_deployed.joblib   (optional)
 #   runs/seg/<ds>/seed0/pred                   (already on the mirror)
 #
-# GATING (coordinator, 2026-09-03 09:35): the scorer.joblib files that phase-1b
+# GATING (team decision, 2026-09-03 09:35): the scorer.joblib files that phase-1b
 # produced are the OLD hdep fits and WILL be overwritten by a forced B/C re-run.
 # Their mere existence therefore means nothing.  The gate is the marker file
 #     runs/rigr_models/.phase2_refit_done
@@ -79,7 +79,7 @@ while :; do
       echo "[H] push FAILED $ts"; sleep 60; continue
     fi
     # Size the pool from the remote 1-minute load average rather than by
-    # looking for another agent's processes by name: a pattern that matches
+    # looking for another job's processes by name: a pattern that matches
     # someone else's job is exactly the failure mode we are avoiding, and load
     # is the thing we actually care about.
     LOAD=$($SSH "awk '{printf \"%d\", \$1}' /proc/loadavg" 2>/dev/null || echo 99)

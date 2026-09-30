@@ -138,7 +138,7 @@ def load_gt_scales(dataset: str, path: str = GATE_A_SCALES_CSV,
         if not os.path.exists(path):
             msg = ("sigma table %r not found. DECISIONS.md 2026-09-03 10:20 "
                    "requires the TRAINING-SPLIT scales; produce it with "
-                   "`python -m src.bio.gate_a --split train` (the C1 agent owns "
+                   "`python -m src.bio.gate_a --split train` (the C1 run owns "
                    "this file). Every macro_mae_* column depends on it."
                    % os.path.relpath(path, EXP_ROOT))
             if required:

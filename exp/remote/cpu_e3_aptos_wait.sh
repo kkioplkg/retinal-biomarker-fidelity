@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Wait for APTOS-2019's twelve FIVES biomarker tables to land in the LOCAL tree
-# (the LAN agent rsyncs them into results/pivot/e3/aptos2019/), then push them
+# (the LAN run rsyncs them into results/pivot/e3/aptos2019/), then push them
 # to the CPU node and start the locked classification stage there.
 #
 #   nohup bash exp/remote/cpu_e3_aptos_wait.sh > runs/cpu_e3_aptos_wait.log 2>&1 &

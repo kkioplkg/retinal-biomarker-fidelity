@@ -156,10 +156,10 @@ DEFAULTS: Dict[str, Any] = dict(
     # behaviour).  [0] = Fig.3 curves and the matched-FCR statistics come
     # from seed 0 only; seeds 1 and 2 run at the default operating point
     # (lambda=1, tau=0.5), which is what Tab.2's main numbers use anyway.
-    # Coordinator ruling 2026-09-05 22:30, see DECISIONS.md.
+    # Decision 2026-09-05 22:30, see DECISIONS.md.
     sweep_seeds=None,
     sweep_lam="0.5,1,2,4",
-    # Coordinator ruling 2026-09-05 23:20: 4 tau values -> a 16-cell grid
+    # Decision 2026-09-05 23:20: 4 tau values -> a 16-cell grid
     # for prob (the only mode that sweeps tau), down from 28.
     sweep_tau="0.3,0.5,0.7,0.9",
     # Datasets whose SWEEP-CELL biomarkers are measured at the C1 working
@@ -1086,7 +1086,7 @@ def _mtime(path: str) -> str:
 
     Printed for every BTR head the preflight touches so a finished table can
     always be traced back to *which build* of the heads priced it -- the C1
-    agent refits them in place, so the path alone does not identify a version.
+    run refits them in place, so the path alone does not identify a version.
     """
     try:
         t = os.path.getmtime(path)
@@ -1126,7 +1126,7 @@ def preflight_sigma(datasets) -> List[str]:
         sub = df[df["_ds"] == canon(ds)]
         if sub.empty:
             msgs.append("%s has NO rows in %s -- every macro_mae_* value for "
-                        "it would be NaN. The C1 agent owns this file."
+                        "it would be NaN. The C1 run owns this file."
                         % (ds, os.path.relpath(GATE_A_SCALES_CSV, EXP_ROOT)))
             continue
         miss = sorted(need - set(sub["biomarker"].astype(str)))
