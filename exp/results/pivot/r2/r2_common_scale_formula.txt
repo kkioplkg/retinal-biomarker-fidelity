@@ -1,0 +1,18 @@
+For biomarker k, using REFERENCE-MASK measurements x_ick^ref only:
+  (1) per-cohort reference centre   m_ck   = median_i x_ick^ref
+  (2) cohort-centred deviations     d_ick  = x_ick^ref - m_ck
+  (3) common scale                  s_k    = 1.4826 * weighted_median_ick |d_ick|,
+      with weights w_ick = 1/n_c so every cohort carries equal total weight
+  (4) every cohort and every segmenter then uses the SAME denominator:
+      e_ick = ( x_ick^pred - x_ick^ref ) / s_k
+Properties: the denominator never depends on model performance; a large cohort (FIVES n=800) cannot dominate it; between-cohort location shifts cannot inflate it. Raw units remain the primary result; this is a cross-cohort SENSITIVITY scale and must not be renamed a 'natural unit' or a 'population SD'. Length-like biomarkers are normalised by the FOV diameter before step (1), because a pixel count is not comparable across cohorts of different resolution.
+
+Per-biomarker values (FOV-normalised representation, training-split reference masks of DRIVE + CHASE_DB1 + HRF + FIVES, equal cohort weight):
+  FD_pvbm              0.0213867
+  FD_skan              0.0270899
+  tortuosity_pvbm      0.00605152
+  tortuosity_skan      0.00881902
+  density_pvbm         0.0141384
+  density_skan         0.0141384
+  total_length_pvbm    1.8096
+  total_length_skan    2.06425

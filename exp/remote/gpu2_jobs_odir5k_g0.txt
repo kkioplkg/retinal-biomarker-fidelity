@@ -1,0 +1,7 @@
+odir5k runs/seg/fives/seed0/best.pt e3_fives_s0_baseline
+odir5k runs/seg/fives/seed1/best.pt e3_fives_s1_baseline
+odir5k runs/seg/fives/seed2/best.pt e3_fives_s2_baseline
+odir5k runs/pivot/fives/seed0/reliseg/last.pt e3_fives_s0_reliseg
+odir5k runs/pivot/fives/seed1/reliseg/last.pt e3_fives_s1_reliseg
+odir5k runs/pivot/fives/seed2/reliseg/last.pt e3_fives_s2_reliseg
+odir5k runs/seg/hrf/seed0/best.pt e3_hrf_s0_baseline

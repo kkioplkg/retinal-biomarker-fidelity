@@ -1,0 +1,28 @@
+# Minimal direct dependencies (Python 3.11-3.14). Exact versions used for the
+# paper are in requirements-lock.txt. Install PyTorch for your CUDA version
+# from https://pytorch.org first if you intend to train or run inference.
+numpy>=2.0
+pandas>=2.2
+scipy>=1.13
+scikit-learn>=1.5
+scikit-image>=0.24
+statsmodels>=0.14
+matplotlib>=3.9
+seaborn>=0.13
+networkx>=3.3
+numba>=0.60
+joblib>=1.4
+pillow>=10.4
+imageio>=2.35
+tifffile>=2024.8
+opencv-python-headless>=4.10
+pyarrow>=16.0
+lightgbm>=4.5
+skan==0.13.1
+pvbm==3.0.1.0
+torch>=2.4
+torchvision>=0.19
+albumentations>=1.4
+tqdm>=4.66
+# optional: second segmenter family (src/pivot/g9_family2.py)
+# segmentation-models-pytorch>=0.3

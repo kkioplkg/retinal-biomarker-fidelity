@@ -1,0 +1,8 @@
+dataset,n,frames,frame_h_median,frame_w_median,fov_diam_median,fov_diam_min,fov_diam_max,frame_over_fov,source
+drive,40,565x584,584.0,565.0,538.0736132763573,534.4957149772499,539.0145749369701,1.0853533524333359,"results/pivot/bio_master.csv (source=gt, feat_fov_area_px at native resolution)"
+stare,20,700x605,605.0,700.0,638.8788405887025,633.6248414677102,718.6189720214285,1.0956695341903258,"src.data.datasets.load_dataset('stare') FOV masks, equivalent diameter 2*sqrt(area/pi) at native resolution"
+chasedb1,28,999x960,960.0,999.0,919.5393130356704,891.2195536435953,922.0432143299622,1.0864137166829066,"results/pivot/bio_master.csv (source=gt, feat_fov_area_px at native resolution)"
+fundusavseg,100,2656x1992; 1280x1280,1280.0,1280.0,1276.4245386862708,1177.0752602755022,2080.1454949349004,1.0039984079222344,"src.data.datasets.load_dataset('fundusavseg') FOV masks, equivalent diameter 2*sqrt(area/pi) at native resolution"
+maplesdr,162,2304x1536; 2240x1488; 1440x960,960.0,1440.0,909.2824195212041,903.3483950359002,1456.2894928980954,1.5931641797405525,"src.data.datasets.load_dataset('maplesdr') FOV masks, equivalent diameter 2*sqrt(area/pi) at native resolution"
+fives,400,2048x2048,2048.0,2048.0,2010.2169077246397,1489.8959741682077,2041.1864525490043,1.0187955301080274,"results/pivot/bio_master.csv (source=gt, feat_fov_area_px at native resolution)"
+hrf,45,3504x2336,2336.0,3504.0,2966.8858626669453,2966.22296618769,2967.5758558912785,1.1810363331099771,"results/pivot/bio_master.csv (source=gt, feat_fov_area_px at native resolution)"

@@ -1,0 +1,7 @@
+odir5k runs/pivot/fives/seed0/cfloss/last.pt e3_fives_s0_cfloss
+odir5k runs/pivot/fives/seed1/cfloss/last.pt e3_fives_s1_cfloss
+odir5k runs/pivot/fives/seed2/cfloss/last.pt e3_fives_s2_cfloss
+odir5k runs/pivot/fives/seed0/continued/last.pt e3_fives_s0_continued
+odir5k runs/pivot/fives/seed1/continued/last.pt e3_fives_s1_continued
+odir5k runs/pivot/fives/seed2/continued/last.pt e3_fives_s2_continued
+odir5k runs/pivot/hrf/seed0/reliseg/last.pt e3_hrf_s0_reliseg

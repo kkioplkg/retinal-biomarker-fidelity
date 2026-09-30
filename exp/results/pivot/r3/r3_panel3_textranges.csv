@@ -1,0 +1,37 @@
+item,paper_value,skan4,skan3,source,status
+topology repair mean |dB| range over cells,0.006-0.115,0.006-0.115,0.006-0.032,e1_topology_image.csv rigr_uniform pooled,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+topology repair RMS dB range over cells,0.006-0.351,0.006-0.351,0.006-0.059,e1_topology_image.csv rigr_uniform pooled,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+view spread panel-mean range,0.268-0.523 (sic),0.268-0.522,0.223-0.577,e1_decomposition.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+HRF Deming slope range,0.37-0.81,0.37-0.81,0.42-0.81,r2_main_table.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+HRF slopes below 1 (count),all four,4/4,3/3,r2_main_table.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+HRF CCC range,0.12-0.57,0.12-0.57,0.12-0.57,r2_main_table.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+HRF slope intervals excluding 1,"length, tortuosity",total;tortuosity,total,r2_main_table.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+proportional bias p<0.05 (cells),6 of 16,6/16,3/12,r2_main_table.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"slope intervals excluding 1 (cells, all cohorts)",,6/16,3/12,r2_main_table.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"family orderings replicated (offset HRF>FIVES / resid SD HRF>FIVES / r FIVES>HRF), panel skan4","4/4, 3/4 (W-Net fails), 4/4","4/4, 3/4, 4/4",,r3_panel3_family.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"family orderings replicated (offset HRF>FIVES / resid SD HRF>FIVES / r FIVES>HRF), panel skan3","4/4, 3/4 (W-Net fails), 4/4",,"4/4, 4/4, 4/4",r3_panel3_family.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+topomatch denominators: grand mean |offset| / resid SD,0.951 / 1.139,0.951 / 1.139,0.861 / 0.737,r3_panel3_audit.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+topomatch mean h_net range over designs,0.0046-0.0068,0.0046-0.0068,0.0027-0.0032,r2_topology_matched.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+topomatch max h_net range over the six designs,0.020-0.048,0.0198-0.0478,0.0063-0.0076,r2_topology_matched.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+topology margin vs mean |offset| (designs; worst stratum),20-48; 17,19.9-47.9; 17.5,112.8-135.7; 109.6,r3_panel3_topomatch.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+13 scale variants: n variants,13,13,13,,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+13 scale variants: HRF/FIVES mean |offset| ratio range,3.9-6.2,3.9-6.2,2.8-4.4,r3_panel3_scale.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+13 scale variants: HRF/FIVES mean resid SD ratio range,1.4-2.0,1.4-2.0,1.4-2.1,r3_panel3_scale.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+13 scale variants: axis separation range,56-102,56-102,88-202,r3_panel3_scale.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+common scale: DRIVE vs HRF mean |offset|,1.36 vs 1.26,1.36 vs 1.26,0.91 vs 1.17,r3_panel3_scale.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+per-event |dB_topo| range,0.002-0.039,0.002-0.039,0.002-0.018,e1_topology_matched.csv sever,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+per-event paired H_net range,0.000-0.020,0.000-0.020,0.000-0.006,e1_topology_matched.csv sever,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+per-event H_net CI upper end max,0.037,0.037,0.007,e1_topology_matched.csv sever,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+largest per-event H_net cell,CHASE_DB1 tortuosity,chasedb1:tortuosity_skan,drive:total_length_skan,,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"additive bracket H_net x events_per_image (NOT the paper bracket, which uses n_should from runs/rigr; not reproduced -- do not quote)",0.025-0.692,0.000-2.033,0.000-0.643,e1_topology_matched.csv sever,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+repair change in macro |e| (range over cohorts),-0.021 to -0.008,-0.021--0.008,-0.014--0.006,"runs/rigr/uniform/<ds>/seed{0,1,2}/per_image.csv (skan4 reproduces e1_topology_image.csv macro_primary4)",skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+baseline macro |e| (range over cohorts),0.64-1.72,0.64-1.72,0.51-1.56,same,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+case figure: selected images (FIVES; HRF),,test_132_G; 07_dr,test_143_G; 06_g,paper2/tools/fig_cases.py rule re-run with the panel swapped,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+case figure: Dice (FIVES vs HRF),0.927 vs 0.803,0.927 vs 0.803,0.928 vs 0.814,,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+case figure: macro |err| sigma (FIVES vs HRF; ratio),0.30 vs 1.65; 5.5,0.30 vs 1.65; 5.5,0.27 vs 1.53; 5.7,,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"FIVES 200-subsamples: mean |offset| range (full 600), panel skan4",0.186-0.223 (0.214),0.186-0.223 (0.214),,r3_panel3_fives_subsample.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"FIVES 200-subsamples: mean r range (full 600), panel skan4",0.848-0.878 (0.861),0.848-0.878 (0.861),,r3_panel3_fives_subsample.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"FIVES 200-subsamples: logreg reference gap range, panel skan4",-0.019 to +0.031,-0.019-0.031,,r3_panel3_fives_subsample.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"FIVES 200-subsamples: mean |offset| range (full 600), panel skan3",0.186-0.223 (0.214),,0.225-0.273 (0.267),r3_panel3_fives_subsample.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"FIVES 200-subsamples: mean r range (full 600), panel skan3",0.848-0.878 (0.861),,0.953-0.973 (0.958),r3_panel3_fives_subsample.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked
+"FIVES 200-subsamples: logreg reference gap range, panel skan3",-0.019 to +0.031,,-0.020-0.025,r3_panel3_fives_subsample.csv,skan3 = added post-hoc reporting hierarchy (sensitivity); skan4 = locked

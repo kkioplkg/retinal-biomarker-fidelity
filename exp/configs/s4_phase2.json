@@ -1,0 +1,12 @@
+{
+  "rfalse_bio": "both",
+  "max_cand_bio": 24,
+  "bio": "both",
+  "btr_runs_dir": "runs/btr/habs_trainonly",
+  "btr_variant": "all",
+  "btr_target": "habs",
+  "cpu_jobs": 8,
+  "sweep_seeds": [
+    0
+  ]
+}

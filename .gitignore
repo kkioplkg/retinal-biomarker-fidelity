@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.nbc
+*.nbi
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+venv/
+
+# Backups and editor files
+*.bak*
+*~
+.DS_Store
+Thumbs.db
+
+# Data, model weights and large intermediates are never committed
+exp/data/*/raw/
+exp/data/*/fov/
+exp/data/*/labels/
+exp/data/*/preannot_native/
+exp/data/external/*/raw/
+exp/data/external/*/fov/
+exp/runs/
+exp/third_party/
+exp/results/pivot/cache/
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz
+*.parquet
+*.tif
+*.tiff
+*.jpg
+*.jpeg
+*.zip
+*.tgz
+*.log
+
+# Local environment and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Regenerated outputs
+exp/figs/

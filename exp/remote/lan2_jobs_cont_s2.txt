@@ -1,0 +1,3 @@
+idrid runs/pivot/fives/seed2/continued/last.pt e3_fives_s2_continued
+messidor2 runs/pivot/fives/seed2/continued/last.pt e3_fives_s2_continued
+aptos2019 runs/pivot/fives/seed2/continued/last.pt e3_fives_s2_continued

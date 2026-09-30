@@ -1,0 +1,9 @@
+aptos2019 runs/seg/fives/seed0/best.pt e3_fives_s0_baseline
+aptos2019 runs/seg/fives/seed1/best.pt e3_fives_s1_baseline
+aptos2019 runs/seg/fives/seed2/best.pt e3_fives_s2_baseline
+aptos2019 runs/pivot/fives/seed0/reliseg/last.pt e3_fives_s0_reliseg
+aptos2019 runs/pivot/fives/seed1/reliseg/last.pt e3_fives_s1_reliseg
+aptos2019 runs/pivot/fives/seed2/reliseg/last.pt e3_fives_s2_reliseg
+aptos2019 runs/pivot/fives/seed0/cfloss/last.pt e3_fives_s0_cfloss
+aptos2019 runs/pivot/fives/seed1/cfloss/last.pt e3_fives_s1_cfloss
+aptos2019 runs/pivot/fives/seed2/cfloss/last.pt e3_fives_s2_cfloss

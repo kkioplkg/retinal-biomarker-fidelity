@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Pull a subtree of the 2x RTX 2080 Ti node's work root back into the local exp/ tree.
+#
+#   bash exp/remote/gpu2_pull.sh results/pivot/e3/odir5k
+#   DEST=exp/results_remote_gpu2 bash exp/remote/gpu2_pull.sh runs/gpu2_e3
+#
+# Default destination is the local exp/ tree itself (same relative path), which
+# is what the E3 results are meant for. Set DEST to stage them elsewhere.
+# Files are overwritten; nothing is deleted on either side.
+
+set -euo pipefail
+
+SSH_HOST="${SSH_HOST:-user@GPU_HOST_2}"
+SSH_PORT="${SSH_PORT:-SSH_PORT}"
+SSH_OPTS=(-p "$SSH_PORT" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6
+          -o Compression=no -c aes128-gcm@openssh.com)
+REMOTE_DIR="${REMOTE_ROOT:-/path/to/workdir/medical1}/exp"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DEST="${DEST:-$EXP_DIR}"
+cd "$EXP_DIR"
+
+[ "$#" -ge 1 ] || { echo "usage: gpu2_pull.sh <remote_subpath> [...]" >&2; exit 1; }
+
+for SUB in "$@"; do
+  echo "[gpu2_pull] $SUB  ->  $DEST/$SUB"
+  mkdir -p "$DEST/$(dirname "$SUB")"
+  # -z here: E3 outputs are CSV/JSON, which compress ~5x over a WAN link.
+  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR' && tar czf - $(printf '%q' "$SUB")" \
+  | tar xzf - -C "$DEST"
+  R=$(ssh "${SSH_OPTS[@]}" "$SSH_HOST" "find '$REMOTE_DIR/$SUB' -type f | wc -l")
+  L=$(find "$DEST/$SUB" -type f | wc -l)
+  echo "[gpu2_pull]   remote files: $R   local files: $L"
+  [ "$R" = "$L" ] || echo "[gpu2_pull]   WARNING: file counts differ (local may hold extra tags from other nodes)" >&2
+done

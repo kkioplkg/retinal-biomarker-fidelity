@@ -1,0 +1,46 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the accompanying article."
+title: "An integrated validation protocol for segmentation-derived imaging biomarkers: a retinal vessel case study"
+type: software
+license: MIT
+repository-code: "https://github.com/kkioplkg/retinal-biomarker-fidelity"
+authors:
+  - given-names: Yuxiang
+    family-names: Wang
+  - given-names: Chengyu
+    family-names: Ma
+  - given-names: Junfei
+    family-names: Yi
+  - given-names: Lingwei
+    family-names: Kong
+  - given-names: Xixuan
+    family-names: Wang
+  - given-names: Jixiang
+    family-names: Yang
+  - given-names: Qingjian
+    family-names: Fan
+keywords:
+  - retinal vessel segmentation
+  - imaging biomarkers
+  - measurement validation
+  - calibration
+  - fundus photography
+preferred-citation:
+  type: article
+  title: "An integrated validation protocol for segmentation-derived imaging biomarkers: a retinal vessel case study"
+  authors:
+    - given-names: Yuxiang
+      family-names: Wang
+    - given-names: Chengyu
+      family-names: Ma
+    - given-names: Junfei
+      family-names: Yi
+    - given-names: Lingwei
+      family-names: Kong
+    - given-names: Xixuan
+      family-names: Wang
+    - given-names: Jixiang
+      family-names: Yang
+    - given-names: Qingjian
+      family-names: Fan
+  year: 2026

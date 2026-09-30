@@ -1,0 +1,9 @@
+idrid runs/seg/fives/seed0/best.pt e3_fives_s0_baseline
+idrid runs/seg/fives/seed1/best.pt e3_fives_s1_baseline
+idrid runs/seg/fives/seed2/best.pt e3_fives_s2_baseline
+idrid runs/pivot/fives/seed0/reliseg/last.pt e3_fives_s0_reliseg
+idrid runs/pivot/fives/seed1/reliseg/last.pt e3_fives_s1_reliseg
+idrid runs/pivot/fives/seed2/reliseg/last.pt e3_fives_s2_reliseg
+idrid runs/pivot/fives/seed0/cfloss/last.pt e3_fives_s0_cfloss
+idrid runs/pivot/fives/seed1/cfloss/last.pt e3_fives_s1_cfloss
+idrid runs/pivot/fives/seed2/cfloss/last.pt e3_fives_s2_cfloss

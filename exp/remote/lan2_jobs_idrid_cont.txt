@@ -1,0 +1,2 @@
+idrid runs/pivot/fives/seed0/continued/last.pt e3_fives_s0_continued
+idrid runs/pivot/fives/seed1/continued/last.pt e3_fives_s1_continued

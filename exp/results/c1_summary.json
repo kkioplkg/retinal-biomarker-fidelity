@@ -1,0 +1,175 @@
+{
+  "wall_s": 0.0,
+  "n_images": 193,
+  "n_events": 31975,
+  "args": {
+    "datasets": [
+      "DRIVE",
+      "CHASE_DB1",
+      "HRF",
+      "FIVES"
+    ],
+    "workers": 6,
+    "limit": 0,
+    "seed": 20260902,
+    "out_dir": "results",
+    "tag": "",
+    "max_side": -1,
+    "fd_rotations": 5,
+    "zone_b": false,
+    "n_sever": 40,
+    "n_bridge": 25,
+    "n_truncate": 20,
+    "n_caliber": 20,
+    "event_scale": 1.0,
+    "event_scale_ds": [],
+    "control_tries": 50,
+    "port_stride": 1,
+    "probe_px": 15,
+    "min_branch_px": 3,
+    "no_second_observer": false,
+    "fives_n": 60,
+    "fives_split": "test",
+    "ds_budget": [],
+    "no_resume": false,
+    "merge_only": true,
+    "fd_check": 0,
+    "fd_check_ref": 25
+  },
+  "errors": 0,
+  "per_image_s": {
+    "mean": 1994.132235132814,
+    "median": 2285.109029538929,
+    "max": 3155.5000724047422
+  },
+  "per_dataset_s": {
+    "CHASE_DB1": {
+      "count": 28,
+      "mean": 2471.8066126143,
+      "median": 2547.4268697612,
+      "max": 2905.0699356645
+    },
+    "DRIVE": {
+      "count": 60,
+      "mean": 1052.0070079707,
+      "median": 1069.438919764,
+      "max": 1251.9375519827
+    },
+    "FIVES": {
+      "count": 60,
+      "mean": 2295.1980634381,
+      "median": 2520.3301599734,
+      "max": 3155.5000724047
+    },
+    "HRF": {
+      "count": 45,
+      "mean": 2551.6584876201,
+      "median": 2548.7058002278,
+      "max": 2898.4363531694
+    }
+  },
+  "verification_failures": {
+    "sever:no_disconnection": 8112,
+    "caliber:invariants_changed": 732,
+    "truncate:cut_too_short": 427,
+    "truncate:branch_too_short": 252,
+    "truncate:beta0_changed": 31
+  },
+  "events_by_type": {
+    "sever": 15838,
+    "truncate": 9505,
+    "bridge": 3624,
+    "caliber": 3008
+  },
+  "events_by_dataset": {
+    "DRIVE": 11168,
+    "FIVES": 10905,
+    "CHASE_DB1": 5859,
+    "HRF": 4043
+  },
+  "events_by_type_severity": {
+    "bridge|bezier": 3624,
+    "caliber|px+1": 1283,
+    "caliber|px-1": 1725,
+    "sever|L0.5D": 3969,
+    "sever|L1D": 3980,
+    "sever|L2D": 4020,
+    "sever|L4D": 3869,
+    "truncate|rho10": 2886,
+    "truncate|rho25": 3310,
+    "truncate|rho50": 3309
+  },
+  "verification_failure_rate": 0.230056,
+  "control_failure_rate_overall": 0.19784206411258798,
+  "control_failure_rate_by_type": {
+    "bridge": 0.3377483443708609,
+    "caliber": 0.11735372340425532,
+    "sever": 0.1591109988634929,
+    "truncate": 0.23450815360336663
+  },
+  "control_match_tier_counts": {
+    "2.0": 11726,
+    "nan": 6326,
+    "0.0": 6291,
+    "1.0": 4809,
+    "3.0": 2279,
+    "4.0": 494,
+    "5.0": 50
+  },
+  "control_fail_reasons": {
+    "invariants_changed": 5574,
+    "donor_too_small": 752
+  },
+  "n_biomarker_delta_cols": 56,
+  "n_phi_cols": 27,
+  "n_shards": 253,
+  "verification_failures_source": "reconstructed: per-image `fails` in results/c1_images.csv (193 original images) + the FIVES-train run summary (60 images, results_remote/results/c1_summary.json). The merge-only rebuild had emptied this field because shards store accepted events only.",
+  "verification_by_type": {
+    "bridge": {
+      "attempted": 3624,
+      "accepted": 3624,
+      "discarded": 0,
+      "discard_fraction": 0.0
+    },
+    "caliber": {
+      "attempted": 3740,
+      "accepted": 3008,
+      "discarded": 732,
+      "discard_fraction": 0.1957
+    },
+    "sever": {
+      "attempted": 23950,
+      "accepted": 15838,
+      "discarded": 8112,
+      "discard_fraction": 0.3387
+    },
+    "truncate": {
+      "attempted": 10215,
+      "accepted": 9505,
+      "discarded": 710,
+      "discard_fraction": 0.0695
+    }
+  },
+  "verification_reason_fractions": {
+    "sever:no_disconnection": {
+      "n": 8112,
+      "fraction_of_attempted": 0.3387
+    },
+    "caliber:invariants_changed": {
+      "n": 732,
+      "fraction_of_attempted": 0.1957
+    },
+    "truncate:cut_too_short": {
+      "n": 427,
+      "fraction_of_attempted": 0.0418
+    },
+    "truncate:branch_too_short": {
+      "n": 252,
+      "fraction_of_attempted": 0.0247
+    },
+    "truncate:beta0_changed": {
+      "n": 31,
+      "fraction_of_attempted": 0.003
+    }
+  }
+}

@@ -1,0 +1,4 @@
+messidor2 runs/seg/hrf/seed0/best.pt e3_hrf_s0_baseline
+messidor2 runs/pivot/hrf/seed0/reliseg/last.pt e3_hrf_s0_reliseg
+aptos2019 runs/seg/hrf/seed0/best.pt e3_hrf_s0_baseline
+aptos2019 runs/pivot/hrf/seed0/reliseg/last.pt e3_hrf_s0_reliseg

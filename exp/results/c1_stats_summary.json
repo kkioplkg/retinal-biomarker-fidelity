@@ -1,0 +1,59 @@
+{
+  "events": "E:\\Programming\\research_ws\\medical1\\exp\\results\\c1_events.parquet",
+  "n_events": 31975,
+  "sigma_source": "gateA:gateA_biomarker_scales.csv",
+  "habs_sigma_source": "gateA_biomarker_scales_train.csv",
+  "habs_units": "native (length-like |dB| x 1/work_scale)",
+  "harm_summary": {
+    "Hnet_FD_pvbm": {
+      "mean": 0.0032309485111225605,
+      "median": 0.0013173614644717646,
+      "frac_positive": 0.504487881157154,
+      "n": 25649
+    },
+    "Hnet_FD_skan": {
+      "mean": 0.0038766216994552015,
+      "median": 0.0024576506962024486,
+      "frac_positive": 0.6422830336200156,
+      "n": 25649
+    },
+    "Hnet_tortuosity_pvbm": {
+      "mean": 0.010952396135024654,
+      "median": 0.0,
+      "frac_positive": 0.28165754495699763,
+      "n": 25539
+    },
+    "Hnet_tortuosity_skan": {
+      "mean": 0.0049216217921847025,
+      "median": 0.0011729412318719418,
+      "frac_positive": 0.47374511336982017,
+      "n": 25649
+    },
+    "Hnet_density_pvbm": {
+      "mean": 0.0,
+      "median": 0.0,
+      "frac_positive": 0.0,
+      "n": 25649
+    },
+    "Hnet_density_skan": {
+      "mean": 0.0,
+      "median": 0.0,
+      "frac_positive": 0.0,
+      "n": 25649
+    },
+    "Hnet_total_length_pvbm": {
+      "mean": 0.023618609956197918,
+      "median": 0.009673084438386012,
+      "frac_positive": 0.6618295543393276,
+      "n": 25649
+    },
+    "Hnet_total_length_skan": {
+      "mean": 0.00411321064014162,
+      "median": 0.0034181693508474214,
+      "frac_positive": 0.6846286161063331,
+      "n": 25649
+    }
+  },
+  "mixedlm": {},
+  "fig2": "E:\\Programming\\research_ws\\medical1\\exp\\figs\\fig2_dose_response.png"
+}

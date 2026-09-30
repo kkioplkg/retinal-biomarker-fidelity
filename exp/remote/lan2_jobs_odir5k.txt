@@ -1,0 +1,12 @@
+odir5k runs/seg/fives/seed0/best.pt e3_fives_s0_baseline
+odir5k runs/seg/fives/seed1/best.pt e3_fives_s1_baseline
+odir5k runs/seg/fives/seed2/best.pt e3_fives_s2_baseline
+odir5k runs/pivot/fives/seed0/reliseg/last.pt e3_fives_s0_reliseg
+odir5k runs/pivot/fives/seed1/reliseg/last.pt e3_fives_s1_reliseg
+odir5k runs/pivot/fives/seed2/reliseg/last.pt e3_fives_s2_reliseg
+odir5k runs/pivot/fives/seed0/cfloss/last.pt e3_fives_s0_cfloss
+odir5k runs/pivot/fives/seed1/cfloss/last.pt e3_fives_s1_cfloss
+odir5k runs/pivot/fives/seed2/cfloss/last.pt e3_fives_s2_cfloss
+odir5k runs/pivot/fives/seed0/continued/last.pt e3_fives_s0_continued
+odir5k runs/pivot/fives/seed1/continued/last.pt e3_fives_s1_continued
+odir5k runs/pivot/fives/seed2/continued/last.pt e3_fives_s2_continued

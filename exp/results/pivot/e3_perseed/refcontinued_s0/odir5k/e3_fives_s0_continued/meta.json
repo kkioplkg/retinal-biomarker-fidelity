@@ -1,0 +1,25 @@
+{
+  "dataset": "odir5k",
+  "tag": "e3_fives_s0_continued",
+  "ckpt": "/path/to/workdir/medical1/exp/runs/pivot/fives/seed0/continued/last.pt",
+  "ckpt_sha256": "f5d6a09dac98eddc5c4378b4da4a717ed3210e570d922909715da421e465b862",
+  "ckpt_train_config": {
+    "dataset": "fives",
+    "seed": 0,
+    "patch": 768,
+    "resize_longest": null,
+    "loss": null
+  },
+  "patch": 768,
+  "stride": 384,
+  "resize_longest": 1536,
+  "crop_to_fov": true,
+  "threshold": 0.5,
+  "pipelines": [
+    "skan"
+  ],
+  "device": "cuda:1",
+  "amp": true,
+  "n_images": 6392,
+  "written": "2026-09-17 20:53:10"
+}

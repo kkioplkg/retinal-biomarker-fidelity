@@ -1,0 +1,102 @@
+{
+ "python": "D:\\Anaconda\\envs\\medical1\\python.exe",
+ "datasets": [
+  "drive",
+  "chasedb1",
+  "hrf",
+  "fives"
+ ],
+ "seeds": [
+  0,
+  1,
+  2
+ ],
+ "modes": [
+  "prob",
+  "uniform",
+  "risk"
+ ],
+ "gpu_lanes": {
+  "0": [],
+  "1": [
+   "drive",
+   "chasedb1",
+   "hrf",
+   "fives"
+  ]
+ },
+ "cpu_jobs": 4,
+ "seg_root": "runs\\seg",
+ "oof_root": "runs\\seg_oof",
+ "head_root": "runs\\rigr_head",
+ "data_root": "runs\\rigr_data",
+ "model_root": "runs\\rigr_models",
+ "rigr_root": "runs\\rigr",
+ "repair_root": "runs\\repair",
+ "btr_root": "runs\\btr",
+ "results_dir": "results",
+ "log_dir": "runs\\s4_logs",
+ "head_epochs": 60,
+ "head_iters": 100,
+ "head_workers": 4,
+ "head_threads": 4,
+ "omega": 0.5,
+ "n_cuts": 15,
+ "rfalse_bio": "both",
+ "rfalse_workers": 6,
+ "rfalse_fd_rotations": 5,
+ "rfalse_max_images": {
+  "fives": 40
+ },
+ "max_cand_bio": 24,
+ "val_fraction": 0.3,
+ "scorer_model": "logreg",
+ "btr_runs_dir": "runs\\btr\\habs_trainonly",
+ "btr_variant": "all",
+ "btr_target": "habs",
+ "lam": 1.0,
+ "eta": 0.1,
+ "tau": 0.5,
+ "bio": "both",
+ "sweep_bio": "skan",
+ "sweep_lam": "0.5,1,2,4",
+ "sweep_tau": "0.3,0.4,0.5,0.6,0.7,0.8,0.9",
+ "rnca_iters": 20000,
+ "evapore_epochs": 150,
+ "baseline_train_seed": 0,
+ "baseline_methods": [
+  "geometric",
+  "rnca",
+  "evapore"
+ ],
+ "baseline_infer_gpu": false,
+ "lodo_head_epochs": 60,
+ "lodo_modes": [
+  "risk",
+  "uniform"
+ ],
+ "lodo_btr_runs_dir": "runs\\btr\\habs_trainonly",
+ "lodo_btr_deployed_false": false,
+ "exp2_bio": "skan",
+ "exp2_max_cand": 40,
+ "exp2_workers": 40,
+ "stability_K": 8,
+ "robust_seed": 0,
+ "resolution_dataset": "hrf",
+ "gpu_steps": [
+  "A",
+  "B",
+  "E_train",
+  "G_head",
+  "G_data",
+  "I"
+ ],
+ "image_caps": {
+  "train": {
+   "fives": 120
+  },
+  "test": {
+   "fives": 60
+  }
+ }
+}

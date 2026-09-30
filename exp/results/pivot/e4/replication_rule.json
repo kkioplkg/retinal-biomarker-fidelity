@@ -1,0 +1,32 @@
+{
+  "rule": "Max-statistic bootstrap over the three primary delta-r endpoints.\n\n    ``dboot`` maps endpoint -> (n_boot,) bootstrap delta-r, ``dhat`` endpoint ->\n    point estimate.  The null distribution of ``max_j (delta_b^j - delta^j)``\n    gives a single-step FWER-controlled adjusted p-value per endpoint\n    (Westfall-Young style),\n\n        p_adj(j) = P[ max_j' (delta_b^j' - delta^j') >= delta^j ].\n\n    Pre-registered success rule (DECISIONS 2026-09-17 13:30 (6)): replication\n    succeeds when at least one endpoint has ``p_adj < alpha`` **and** no\n    endpoint runs in the opposite direction, i.e. no endpoint whose two-sided\n    95 % percentile CI lies entirely below zero.  A CI containing zero is not\n    evidence of no effect -- no equivalence margin was pre-specified.",
+  "contrast": "reliseg - continued, skan pipeline",
+  "endpoints": [
+    "FD",
+    "density",
+    "total_length"
+  ],
+  "p_adj": {
+    "FD": 1.0,
+    "density": 0.9725,
+    "total_length": 0.9435
+  },
+  "ci": {
+    "FD": [
+      -0.03745798602006336,
+      0.016733822703705596
+    ],
+    "density": [
+      -0.005819028965212669,
+      0.002794474382952901
+    ],
+    "total_length": [
+      -0.002583150810414639,
+      0.0011982250337059064
+    ]
+  },
+  "alpha": 0.05,
+  "opposite_direction": [],
+  "significant": [],
+  "replication_success": false
+}
